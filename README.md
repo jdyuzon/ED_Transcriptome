@@ -1,9 +1,9 @@
 # Transcriptome response of Exophiala dermatitidis adapted to gamma radiation
-##Script for differential gene expression and gene network analysis:
+## Script for differential gene expression and gene network analysis:
 ```
 JGI_transcriptome_evol_groups.R
 ```
-##Genome annotation files:
+## Genome annotation files:
 ED_Transcriptome/Exode1_GeneCatalog_proteins_20160902_GO.genename.csv
 ED_Transcriptome/Exode1_GeneCatalog_proteins_20160902_KEGG.csv
 ED_Transcriptome/Exode1_GeneCatalog_proteins_20160902_KOG.csv
