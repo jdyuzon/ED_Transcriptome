@@ -1,5 +1,9 @@
 # Transcriptome response of Exophiala dermatitidis adapted to gamma radiation
 ## Script for differential gene expression and gene network analysis:
+Required Software:
+DESeq
+WGCNA
+clusterProfiler
 ```
 JGI_transcriptome_evol_groups.R
 ```
