@@ -1,22 +1,3 @@
-#if (!requireNamespace("BiocManager", quietly = TRUE))
-#  install.packages("BiocManager")
-#BiocManager::install("DESeq2")
-#BiocManager::install("pasilla")
-#BiocManager::install("apeglm")
-#BiocManager::install("BiocParallel")
-#BiocManager::install("pheatmap")
-#BiocManager::install("DEGreport")
-#BiocManager::install("pathview")
-#BiocManager::install("clusterProfiler")
-#BiocManager::install("WGCNA")
-#BiocManager::install("biomaRt")
-#install.packages("ggplot2")
-#install.packages("ggrepel")
-#install.packages("ggnewscale")
-#install.packages("ggpubr")
-#install.packages("VennDiagram")
-#install.packages("gplots")
-
 library(DESeq2)
 library(DEGreport)
 library("pasilla")
@@ -43,8 +24,7 @@ library(tidyverse)
 library( "genefilter" )
 library("gplots")
 library("ggplotify")
-
-setwd("~/Library/Mobile Documents/com~apple~CloudDocs/NRL_Postdoc/ED_Transcriptome_evol/")
+library(ggforce)
 
 
 ###Count matrix input
@@ -58,6 +38,8 @@ all(rownames(coldata) %in% colnames(cts))
 all(rownames(coldata) == colnames(cts)) ###not in the same order
 coldata$Transfers<-factor(coldata$Transfers)
 coldata$Group<-gsub("15..*","15",coldata$genotype)
+###WT0 original isolate, WTC and PKSC trasnferred 15 times
+coldata$Group[coldata$Isolate=="WT0"]<-"WT0"
 
 cts <- cts[, rownames(coldata)] ###order the counts data by sample annotation file order
 all(rownames(coldata) == colnames(cts)) ###in same order
@@ -190,21 +172,6 @@ dds$genotype<- factor(dds$genotype, levels = c("WT","PKS",
 ntd <- normTransform(dds)
 vsd <- vst(dds)
 rld <- rlog(dds)
-####heatmap of count matrix
-df <- as.data.frame(colData(dds)[,c("condition","Isolate")])
-pheatmap(assay(ntd), cluster_rows=TRUE, show_rownames=FALSE,
-         cluster_cols=FALSE, annotation_col=df)
-
-####Heatmap of sample clustering
-sampleDists <- dist(t(assay(vsd)))
-sampleDistMatrix <- as.matrix(sampleDists)
-rownames(sampleDistMatrix) <- paste(vsd$condition, vsd$Isolate, sep="-")
-colnames(sampleDistMatrix) <- NULL
-colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
-pheatmap(sampleDistMatrix,
-         clustering_distance_rows=sampleDists,
-         clustering_distance_cols=sampleDists,
-         col=colors)
 
 pcaData<-plotPCA(vsd, intgroup=c("condition", "Isolate"),returnData=TRUE)
 ggplot(pcaData, aes(x = PC1, y = PC2, color = factor(condition), shape = factor(Isolate))) + 
@@ -217,7 +184,7 @@ ggplot(pcaData, aes(x = PC1, y = PC2, color = factor(condition), shape = factor(
 
 pcaData<-plotPCA(vsd, intgroup=c("condition", "Sample"),returnData=TRUE)
 pcaData$name<- sub("_.*", "", pcaData$name)
-pcaData$name<- sub("PKS C.*", "PKS C1", pcaData$name)
+pcaData$name<- sub("PKSC.*", "PKSC1", pcaData$name)
 
 ##Two WT15.1.2 libraries (one irradiated WT15.1.2_3 and one not irradiated WT15.1.2_6) do not cluster with other WT but with R52, toss out
 ##WTC1_4 and WT15.4.1_4 Control conditions cluster with Irradiated
@@ -236,19 +203,101 @@ vsd_evol$condition <- factor(vsd_evol$condition, levels = c("Irradiated", "Contr
 pheatmap(assay(vsd_evol), cluster_rows=TRUE, show_rownames=FALSE,
          cluster_cols=TRUE, annotation_col=df)
 
-sampleDists <- dist(t(assay(vsd_evol)))
-sampleDistMatrix <- as.matrix(sampleDists)
-rownames(sampleDistMatrix) <- paste(vsd_evol$condition, vsd_evol$Isolate, sep="-")
-colnames(sampleDistMatrix) <- NULL
-colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
-evol_heatmap<-pheatmap(sampleDistMatrix,
-                       clustering_distance_rows=sampleDists,
-                       clustering_distance_cols=sampleDists,
-                       col=colors)
+vsd_evol_trim<-vsd_evol[,-(which(colnames(vsd_evol)=="PKSC1"|
+                                   colnames(vsd_evol)=="PKSC2"|
+                                   colnames(vsd_evol)=="PKSC3"|
+                                   colnames(vsd_evol)=="PKSC4"|
+                                   colnames(vsd_evol)=="PKSC5"|
+                                   colnames(vsd_evol)=="PKSC6"|
+                                   colnames(vsd_evol)=="PKS15.2.1_1"|
+                                   colnames(vsd_evol)=="PKS15.2.1_2"|
+                                   colnames(vsd_evol)=="PKS15.2.1_3"|
+                                   colnames(vsd_evol)=="PKS15.2.1_4"|
+                                   colnames(vsd_evol)=="PKS15.2.1_5"|
+                                   colnames(vsd_evol)=="PKS15.2.1_6"))]
 
-pcaData<-plotPCA(vsd_evol, intgroup=c("condition", "Sample"),returnData=TRUE)
-pcaData$name<- sub("_.*", "", pcaData$name)
-pcaData$name<- sub("PKS C.*", "PKS C1", pcaData$name)
+vsd_evol_WT<-vsd_evol[,grep("WT",colnames(vsd_evol))]
+vsd_evol_PKS<-vsd_evol[,grep("PKS",colnames(vsd_evol))]
+vsd_evol_trim_PKS<-vsd_evol_trim[,grep("PKS",colnames(vsd_evol_trim))]
+
+evol_heatmap<-list()
+heatmap_evol_fx<-function(x,name){
+  sampleDists <- dist(t(assay(x)))
+  sampleDistMatrix <- as.matrix(sampleDists)
+  rownames(sampleDistMatrix) <- paste(x$condition, x$Isolate, sep="-")
+  colnames(sampleDistMatrix) <- NULL
+  colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+  evol_heatmap[[name]]<<-pheatmap(sampleDistMatrix,
+                                  clustering_distance_rows=sampleDists,
+                                  clustering_distance_cols=sampleDists,
+                                  col=colors)
+}
+
+heatmap_evol_fx(x=vsd_evol,"vsd_evol")
+heatmap_evol_fx(x=vsd_evol_trim,"vsd_evol_trim")
+heatmap_evol_fx(x=vsd_evol_WT,"vsd_evol_WT")
+heatmap_evol_fx(x=vsd_evol_PKS,"vsd_evol_PKS")
+heatmap_evol_fx(x=vsd_evol_trim_PKS,"vsd_evol_trim_PKS")
+
+evol_pca<-list()
+pca_evol_fx<-function(x,name){
+  Isolate_list<-c("WT0","WTC1","PKSC1",
+             "WT15.1.2","WT15.2.1","WT15.2.2","WT15.4.1","WT15.4.2",
+             "PKS15.1.1","PKS15.2.1","PKS15.2.2","PKS15.3.2","PKS15.4.2")
+  pcaData<-plotPCA(x, intgroup=c("condition", "Isolate"),returnData=TRUE)
+  pcaData$condition<-sub("Control","Non-irradiated",pcaData$condition)
+  pcaData$name<- sub("_.*", "", pcaData$name)
+  pcaData$name<- sub("PKSC.*", "PKSC1", pcaData$name)
+  percentVar <- round(100 * attr(pcaData, "percentVar"))
+  pcaData$name_color<- sub("PKS.*", "PKS", pcaData$name)
+  pcaData$name_color<- sub("WT.*", "WT", pcaData$name_color)
+  pcaData$name<-factor(pcaData$name,Isolate_list)
+  evol_pca[[name]]<<-ggplot(pcaData, aes(x = PC1, y = PC2, group=group)) + 
+    geom_point(aes(shape=name,color=condition,size=6))+
+    scale_shape_manual(values=1:length(Isolate_list),
+                       breaks = Isolate_list) +
+    guides(shape = guide_legend(override.aes = list(size=5)),
+           color = guide_legend(override.aes = list(size=5)))+
+    geom_mark_ellipse(aes(color = condition,
+                          label=name),
+                      con.size=0.2,
+                      con.type="straight",
+                      con.cap = unit(0, "mm"),
+                      expand = unit(0.5,"mm"),
+                      label.buffer = unit(0, 'mm'),
+                      label.fill = alpha(c("white"),0),
+                      label.fontsize =16)+
+    theme(text = element_text(size = 20),
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          panel.background = element_blank(),
+          axis.line = element_line(colour = "black"))+
+    xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+    ylab(paste0("PC2: ",percentVar[2],"% variance"))+
+    labs(col="Condition",shape="Isolate")
+}
+pca_evol_fx(x=vsd_evol,name="vsd_evol")
+pca_evol_fx(x=vsd_evol_trim,"vsd_evol_trim")
+pca_evol_fx(x=vsd_evol_WT,"vsd_evol_WT")
+pca_evol_fx(x=vsd_evol_PKS,"vsd_evol_PKS")
+pca_evol_fx(x=vsd_evol_trim_PKS,"vsd_evol_trim_PKS")
+
+WT15_PKS15.all.pca<-ggarrange(evol_pca[["vsd_evol"]],evol_pca[["vsd_evol_trim"]],
+                              labels = c("A","B"),font.label = list(size = 20),ncol=1,
+                              common.legend = TRUE,legend = "right")
+pdf("output/evolFigS1_WT15_PKS15.all.pca.pdf" ,width=17,height=22)#,width=11,height=8.5)
+WT15_PKS15.all.pca
+graphics.off()
+
+WT15_PKS15.separate.pca<-ggarrange(evol_pca[["vsd_evol_WT"]],# First row with scatter plot
+                                   ggarrange(evol_pca[["vsd_evol_PKS"]],evol_pca[["vsd_evol_trim_PKS"]],
+                                             ncol = 1, labels = c("B", "C"),font.label = list(size = 20),common.legend = TRUE,legend="right"), # Second row with box and dot plots
+                                   nrow = 1,common.legend = TRUE,legend="right",labels = "A",font.label = list(size = 20) # Labels of the scatter plot,
+) 
+pdf("output/evolFigS2_WT15_PKS15.separate.pca.pdf",width=22,height=17)
+WT15_PKS15.separate.pca
+graphics.off()
+
 pdf("output/ED_transcriptome_WT_PKS.pca.pdf", width=14,height=14)
 ggplot(pcaData, aes(x = PC1, y = PC2, color = factor(condition))) + 
   geom_text(aes(label=Sample,alpha=0.5),hjust=0, vjust=0,size = 3)+
@@ -257,25 +306,6 @@ ggplot(pcaData, aes(x = PC1, y = PC2, color = factor(condition))) +
   ylab(paste0("PC2: ",percentVar[2],"% variance"))
 graphics.off()
 
-
-pcaData$name_color<- sub("PKS.*", "PKS", pcaData$name)
-pcaData$name_color<- sub("WT.*", "WT", pcaData$name_color)
-ggplot(pcaData, aes(x = PC1, y = PC2, color = factor(name_color))) + 
-  geom_text(aes(label=Sample,alpha=0.5),hjust=0, vjust=0,size = 3)+
-  theme(legend.title = element_blank()) +
-  coord_flip()
-
-percentVar <- round(100 * attr(pcaData, "percentVar"))
-evol_pca<-ggplot(pcaData, aes(x = PC1, y = PC2, label =Sample)) + 
-  geom_text_repel(aes(color=factor(condition)),segment.color = 'transparent',
-                  max.overlaps = getOption("ggrepel.max.overlaps", default = 50))+
-  theme(legend.position = "none",
-        panel.grid.major = element_blank(), 
-        panel.grid.minor = element_blank(),
-        panel.background = element_blank(), 
-        axis.line = element_line(colour = "black"))+
-  xlab(paste0("PC1: ",percentVar[1],"% variance")) +
-  ylab(paste0("PC2: ",percentVar[2],"% variance"))
 ###############################################################
 #####Dispersion during differential expression analysis########
 ###############################################################
@@ -283,7 +313,13 @@ evol_pca<-ggplot(pcaData, aes(x = PC1, y = PC2, label =Sample)) +
 ####To address this problem, DESeq2 shares information across genes to generate more accurate 
 ####estimates of variation based on the mean expression level of the gene using a method called ‘shrinkage’. 
 ####DESeq2 assumes that genes with similar expression levels should have similar dispersion.
-idx<-which(colnames(vsd)=="WTC1_4" |
+idx<-which(colnames(vsd)=="WT0_1" |
+             colnames(vsd)=="WT0_2" |
+             colnames(vsd)=="WT0_3" |
+             colnames(vsd)=="WT0_4" |
+             colnames(vsd)=="WT0_5" |
+             colnames(vsd)=="WT0_6" |
+             colnames(vsd)=="WTC1_4" |
              colnames(vsd)=="WT15.1.2_3" |
              colnames(vsd)=="WT15.1.2_6" |
              colnames(vsd)=="WT15.4.1_4")
@@ -308,9 +344,9 @@ dds_evol$Isolate <- factor(dds_evol$Isolate,
 dds_evol_individual$condition <- factor(dds_evol_individual$condition, levels = c("Control","Irradiated"))
 dds_evol_individual$Group <- factor(dds_evol_individual$Group, levels = c("WT","PKS","WT15","PKS15"))
 dds_evol_individual$Isolate <- factor(dds_evol_individual$Isolate, 
-                           levels = c("WT.C1","PKS.C1",
-                                      "WT15.1.2","WT15.2.1","WT15.2.2","WT15.4.1","WT15.4.2","WT0",
-                                      "PKS15.1.1","PKS15.2.1","PKS15.2.2","PKS15.3.2","PKS15.4.2"))
+                                      levels = c("WT.C1","PKS.C1",
+                                                 "WT15.1.2","WT15.2.1","WT15.2.2","WT15.4.1","WT15.4.2",
+                                                 "PKS15.1.1","PKS15.2.1","PKS15.2.2","PKS15.3.2","PKS15.4.2"))
 
 
 dds <- DESeq(dds)
@@ -335,6 +371,10 @@ plotDispEsts(dds_evol_individual)
 ###This is for WT, treated compared with untreated. 
 ###Note that WT is not mentioned, because it is the reference level.
 resultsNames(dds_evol)
+
+res_PKS_vs_WT_ctl<-results(dds_evol, contrast=c("Group","PKS","WT") ,alpha = 0.05)
+res_PKS_vs_WT_irr<-results(dds_evol, list("Group_PKS_vs_WT","GroupPKS.conditionIrradiated" ) ,alpha = 0.05)
+
 res_WT_irr_vs_ctl = results(dds_evol, contrast=c("condition","Irradiated","Control"),alpha = 0.05)
 res_PKS_irr_vs_ctl <- results(dds_evol, list( c("condition_Irradiated_vs_Control","GroupPKS.conditionIrradiated") ),alpha = 0.05)
 res_WT15common_irr_vs_ctl<- results(dds_evol, list( c("condition_Irradiated_vs_Control","GroupWT15.conditionIrradiated") ),alpha = 0.05)
@@ -353,6 +393,16 @@ res_PKS15_vs_WT15_irr<-results(dds_evol, contrast=list("GroupPKS15.conditionIrra
 res_PKS15_vs_WT15_ctl<-results(dds_evol, contrast=c("Group","PKS15","WT15"),alpha = 0.05) 
 
 resultsNames(dds_evol_individual)
+res_WT15.1.2_irr_vs_ctl <- results(dds_evol_individual, list( c("condition_Irradiated_vs_Control","IsolateWT15.1.2.conditionIrradiated")),alpha = 0.05)  
+res_WT15.2.1_irr_vs_ctl <- results(dds_evol_individual, list( c("condition_Irradiated_vs_Control","IsolateWT15.2.1.conditionIrradiated")),alpha = 0.05)  
+res_WT15.2.2_irr_vs_ctl <- results(dds_evol_individual, list( c("condition_Irradiated_vs_Control","IsolateWT15.2.2.conditionIrradiated")),alpha = 0.05) 
+res_WT15.4.1_irr_vs_ctl <- results(dds_evol_individual, list( c("condition_Irradiated_vs_Control","IsolateWT15.4.1.conditionIrradiated")),alpha = 0.05)  
+res_WT15.4.2_irr_vs_ctl <- results(dds_evol_individual, list( c("condition_Irradiated_vs_Control","IsolateWT15.4.2.conditionIrradiated")),alpha = 0.05)
+res_PKS15.1.1_irr_vs_ctl <- results(dds_evol_individual, contrast=list("condition_Irradiated_vs_Control","IsolatePKS15.1.1.conditionIrradiated"),alpha = 0.05)
+res_PKS15.2.1_irr_vs_ctl <- results(dds_evol_individual, contrast=list("condition_Irradiated_vs_Control","IsolatePKS15.2.1.conditionIrradiated"),alpha = 0.05)
+res_PKS15.2.2_irr_vs_ctl <- results(dds_evol_individual, contrast=list("condition_Irradiated_vs_Control","IsolatePKS15.2.2.conditionIrradiated"),alpha = 0.05)
+res_PKS15.3.2_irr_vs_ctl <- results(dds_evol_individual, contrast=list("condition_Irradiated_vs_Control","IsolatePKS15.3.2.conditionIrradiated"),alpha = 0.05)
+res_PKS15.4.2_irr_vs_ctl <- results(dds_evol_individual, contrast=list("condition_Irradiated_vs_Control","IsolatePKS15.4.2.conditionIrradiated"),alpha = 0.05)
 res_WT15.1.2_vs_WT_irr <- results(dds_evol_individual, list( c("Isolate_WT15.1.2_vs_WT.C1","IsolateWT15.1.2.conditionIrradiated")),alpha = 0.05)  
 res_WT15.2.1_vs_WT_irr <- results(dds_evol_individual, list( c("Isolate_WT15.2.1_vs_WT.C1","IsolateWT15.2.1.conditionIrradiated")),alpha = 0.05)  
 res_WT15.2.2_vs_WT_irr <- results(dds_evol_individual, list( c("Isolate_WT15.2.2_vs_WT.C1","IsolateWT15.2.2.conditionIrradiated")),alpha = 0.05) 
@@ -374,239 +424,187 @@ res_PKS15.2.2_vs_PKS_ctl <- results(dds_evol_individual, contrast=list("Isolate_
 res_PKS15.3.2_vs_PKS_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.3.2_vs_WT.C1","Isolate_PKS.C1_vs_WT.C1"),alpha = 0.05)
 res_PKS15.4.2_vs_PKS_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.4.2_vs_WT.C1","Isolate_PKS.C1_vs_WT.C1"),alpha = 0.05)
 
-###Within differences of the evolved WT15 lines
-res_WT15.1.2_vs_WT15.2.1_irr <- results(dds_evol_individual, contrast=list("IsolateWT15.1.2.conditionIrradiated","IsolateWT15.2.1.conditionIrradiated"),alpha = 0.05)
-res_WT15.1.2_vs_WT15.2.2_irr <- results(dds_evol_individual, contrast=list("IsolateWT15.1.2.conditionIrradiated","IsolateWT15.2.2.conditionIrradiated"),alpha = 0.05)
-res_WT15.1.2_vs_WT15.4.1_irr <- results(dds_evol_individual, contrast=list("IsolateWT15.1.2.conditionIrradiated","IsolateWT15.4.1.conditionIrradiated"),alpha = 0.05)
-res_WT15.1.2_vs_WT15.4.2_irr <- results(dds_evol_individual, contrast=list("IsolateWT15.1.2.conditionIrradiated","IsolateWT15.4.2.conditionIrradiated"),alpha = 0.05)
-
-res_WT15.2.1_vs_WT15.1.2_irr <- results(dds_evol_individual, contrast=list("IsolateWT15.2.1.conditionIrradiated","IsolateWT15.1.2.conditionIrradiated"),alpha = 0.05)
-res_WT15.2.1_vs_WT15.2.2_irr <- results(dds_evol_individual, contrast=list("IsolateWT15.2.1.conditionIrradiated","IsolateWT15.2.2.conditionIrradiated"),alpha = 0.05)
-res_WT15.2.1_vs_WT15.4.1_irr <- results(dds_evol_individual, contrast=list("IsolateWT15.2.1.conditionIrradiated","IsolateWT15.4.1.conditionIrradiated"),alpha = 0.05)
-res_WT15.2.1_vs_WT15.4.2_irr <- results(dds_evol_individual, contrast=list("IsolateWT15.2.1.conditionIrradiated","IsolateWT15.4.2.conditionIrradiated"),alpha = 0.05)
-
-res_WT15.2.2_vs_WT15.1.2_irr <- results(dds_evol_individual, contrast=list("IsolateWT15.2.2.conditionIrradiated","IsolateWT15.1.2.conditionIrradiated"),alpha = 0.05)
-res_WT15.2.2_vs_WT15.2.1_irr <- results(dds_evol_individual, contrast=list("IsolateWT15.2.2.conditionIrradiated","IsolateWT15.2.1.conditionIrradiated"),alpha = 0.05)
-res_WT15.2.2_vs_WT15.4.1_irr <- results(dds_evol_individual, contrast=list("IsolateWT15.2.2.conditionIrradiated","IsolateWT15.4.1.conditionIrradiated"),alpha = 0.05)
-res_WT15.2.2_vs_WT15.4.2_irr <- results(dds_evol_individual, contrast=list("IsolateWT15.2.2.conditionIrradiated","IsolateWT15.4.2.conditionIrradiated"),alpha = 0.05)
-
-res_WT15.4.1_vs_WT15.1.2_irr <- results(dds_evol_individual, contrast=list("IsolateWT15.4.1.conditionIrradiated","IsolateWT15.1.2.conditionIrradiated"),alpha = 0.05)
-res_WT15.4.1_vs_WT15.2.1_irr <- results(dds_evol_individual, contrast=list("IsolateWT15.4.1.conditionIrradiated","IsolateWT15.2.1.conditionIrradiated"),alpha = 0.05)
-res_WT15.4.1_vs_WT15.2.2_irr <- results(dds_evol_individual, contrast=list("IsolateWT15.4.1.conditionIrradiated","IsolateWT15.2.2.conditionIrradiated"),alpha = 0.05)
-res_WT15.4.1_vs_WT15.4.2_irr <- results(dds_evol_individual, contrast=list("IsolateWT15.4.1.conditionIrradiated","IsolateWT15.4.2.conditionIrradiated"),alpha = 0.05)
-
-res_WT15.4.2_vs_WT15.1.2_irr <- results(dds_evol_individual, contrast=list("IsolateWT15.4.2.conditionIrradiated","IsolateWT15.1.2.conditionIrradiated"),alpha = 0.05)
-res_WT15.4.2_vs_WT15.2.1_irr <- results(dds_evol_individual, contrast=list("IsolateWT15.4.2.conditionIrradiated","IsolateWT15.2.1.conditionIrradiated"),alpha = 0.05)
-res_WT15.4.2_vs_WT15.2.2_irr <- results(dds_evol_individual, contrast=list("IsolateWT15.4.2.conditionIrradiated","IsolateWT15.2.2.conditionIrradiated"),alpha = 0.05)
-res_WT15.4.2_vs_WT15.4.1_irr <- results(dds_evol_individual, contrast=list("IsolateWT15.4.2.conditionIrradiated","IsolateWT15.4.1.conditionIrradiated"),alpha = 0.05)
-
-###Within differences of the evolved PKS15 lines
-res_PKS15.1.1_vs_PKS15.2.1_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.1.1.conditionIrradiated","IsolatePKS15.2.1.conditionIrradiated"),alpha = 0.05)
-res_PKS15.1.1_vs_PKS15.2.2_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.1.1.conditionIrradiated","IsolatePKS15.2.2.conditionIrradiated"),alpha = 0.05)
-res_PKS15.1.1_vs_PKS15.3.2_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.1.1.conditionIrradiated","IsolatePKS15.3.2.conditionIrradiated"),alpha = 0.05)
-res_PKS15.1.1_vs_PKS15.4.2_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.1.1.conditionIrradiated","IsolatePKS15.4.2.conditionIrradiated"),alpha = 0.05)
-
-res_PKS15.2.1_vs_PKS15.1.1_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.2.1.conditionIrradiated","IsolatePKS15.1.1.conditionIrradiated"),alpha = 0.05)
-res_PKS15.2.1_vs_PKS15.2.2_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.2.1.conditionIrradiated","IsolatePKS15.2.2.conditionIrradiated"),alpha = 0.05)
-res_PKS15.2.1_vs_PKS15.3.2_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.2.1.conditionIrradiated","IsolatePKS15.3.2.conditionIrradiated"),alpha = 0.05)
-res_PKS15.2.1_vs_PKS15.4.2_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.2.1.conditionIrradiated","IsolatePKS15.4.2.conditionIrradiated"),alpha = 0.05)
-
-res_PKS15.2.2_vs_PKS15.1.1_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.2.2.conditionIrradiated","IsolatePKS15.1.1.conditionIrradiated"),alpha = 0.05)
-res_PKS15.2.2_vs_PKS15.2.1_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.2.2.conditionIrradiated","IsolatePKS15.2.1.conditionIrradiated"),alpha = 0.05)
-res_PKS15.2.2_vs_PKS15.3.2_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.2.2.conditionIrradiated","IsolatePKS15.3.2.conditionIrradiated"),alpha = 0.05)
-res_PKS15.2.2_vs_PKS15.4.2_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.2.2.conditionIrradiated","IsolatePKS15.4.2.conditionIrradiated"),alpha = 0.05)
-
-res_PKS15.3.2_vs_PKS15.1.1_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.3.2.conditionIrradiated","IsolatePKS15.1.1.conditionIrradiated"),alpha = 0.05)
-res_PKS15.3.2_vs_PKS15.2.1_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.3.2.conditionIrradiated","IsolatePKS15.2.1.conditionIrradiated"),alpha = 0.05)
-res_PKS15.3.2_vs_PKS15.2.2_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.3.2.conditionIrradiated","IsolatePKS15.2.2.conditionIrradiated"),alpha = 0.05)
-res_PKS15.3.2_vs_PKS15.4.2_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.3.2.conditionIrradiated","IsolatePKS15.4.2.conditionIrradiated"),alpha = 0.05)
-
-res_PKS15.4.2_vs_PKS15.1.1_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.4.2.conditionIrradiated","IsolatePKS15.1.1.conditionIrradiated"),alpha = 0.05)
-res_PKS15.4.2_vs_PKS15.2.1_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.4.2.conditionIrradiated","IsolatePKS15.2.1.conditionIrradiated"),alpha = 0.05)
-res_PKS15.4.2_vs_PKS15.2.2_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.4.2.conditionIrradiated","IsolatePKS15.2.2.conditionIrradiated"),alpha = 0.05)
-res_PKS15.4.2_vs_PKS15.3.2_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.4.2.conditionIrradiated","IsolatePKS15.3.2.conditionIrradiated"),alpha = 0.05)
-
-###Between differences of the evolved WT15 and PKS15 lines
-res_PKS15.1.1_vs_WT15.1.2_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.1.1.conditionIrradiated","IsolateWT15.1.2.conditionIrradiated"),alpha = 0.05)
-res_PKS15.1.1_vs_WT15.2.1_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.1.1.conditionIrradiated","IsolateWT15.2.1.conditionIrradiated"),alpha = 0.05)
-res_PKS15.1.1_vs_WT15.2.2_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.1.1.conditionIrradiated","IsolateWT15.2.2.conditionIrradiated"),alpha = 0.05)
-res_PKS15.1.1_vs_WT15.4.1_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.1.1.conditionIrradiated","IsolateWT15.4.1.conditionIrradiated"),alpha = 0.05)
-res_PKS15.1.1_vs_WT15.4.2_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.1.1.conditionIrradiated","IsolateWT15.4.2.conditionIrradiated"),alpha = 0.05)
-
-res_PKS15.2.1_vs_WT15.1.2_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.2.1.conditionIrradiated","IsolateWT15.1.2.conditionIrradiated"),alpha = 0.05)
-res_PKS15.2.1_vs_WT15.2.1_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.2.1.conditionIrradiated","IsolateWT15.2.1.conditionIrradiated"),alpha = 0.05)
-res_PKS15.2.1_vs_WT15.2.2_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.2.1.conditionIrradiated","IsolateWT15.2.2.conditionIrradiated"),alpha = 0.05)
-res_PKS15.2.1_vs_WT15.4.1_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.2.1.conditionIrradiated","IsolateWT15.4.1.conditionIrradiated"),alpha = 0.05)
-res_PKS15.2.1_vs_WT15.4.2_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.2.1.conditionIrradiated","IsolateWT15.4.2.conditionIrradiated"),alpha = 0.05)
-
-res_PKS15.2.2_vs_WT15.1.2_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.2.2.conditionIrradiated","IsolateWT15.1.2.conditionIrradiated"),alpha = 0.05)
-res_PKS15.2.2_vs_WT15.2.1_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.2.2.conditionIrradiated","IsolateWT15.2.1.conditionIrradiated"),alpha = 0.05)
-res_PKS15.2.2_vs_WT15.2.2_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.2.2.conditionIrradiated","IsolateWT15.2.2.conditionIrradiated"),alpha = 0.05)
-res_PKS15.2.2_vs_WT15.4.1_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.2.2.conditionIrradiated","IsolateWT15.4.1.conditionIrradiated"),alpha = 0.05)
-res_PKS15.2.2_vs_WT15.4.2_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.2.2.conditionIrradiated","IsolateWT15.4.2.conditionIrradiated"),alpha = 0.05)
-
-res_PKS15.3.2_vs_WT15.1.2_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.3.2.conditionIrradiated","IsolateWT15.1.2.conditionIrradiated"),alpha = 0.05)
-res_PKS15.3.2_vs_WT15.2.1_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.3.2.conditionIrradiated","IsolateWT15.2.1.conditionIrradiated"),alpha = 0.05)
-res_PKS15.3.2_vs_WT15.2.2_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.3.2.conditionIrradiated","IsolateWT15.2.2.conditionIrradiated"),alpha = 0.05)
-res_PKS15.3.2_vs_WT15.4.1_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.3.2.conditionIrradiated","IsolateWT15.4.1.conditionIrradiated"),alpha = 0.05)
-res_PKS15.3.2_vs_WT15.4.2_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.3.2.conditionIrradiated","IsolateWT15.4.2.conditionIrradiated"),alpha = 0.05)
-
-res_PKS15.4.2_vs_WT15.1.2_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.4.2.conditionIrradiated","IsolateWT15.1.2.conditionIrradiated"),alpha = 0.05)
-res_PKS15.4.2_vs_WT15.2.1_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.4.2.conditionIrradiated","IsolateWT15.2.1.conditionIrradiated"),alpha = 0.05)
-res_PKS15.4.2_vs_WT15.2.2_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.4.2.conditionIrradiated","IsolateWT15.2.2.conditionIrradiated"),alpha = 0.05)
-res_PKS15.4.2_vs_WT15.4.1_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.4.2.conditionIrradiated","IsolateWT15.4.1.conditionIrradiated"),alpha = 0.05)
-res_PKS15.4.2_vs_WT15.4.2_irr <- results(dds_evol_individual, contrast=list("IsolatePKS15.4.2.conditionIrradiated","IsolateWT15.4.2.conditionIrradiated"),alpha = 0.05)
-
-###Within differences of the evolved WT15 lines
-res_WT15.1.2_vs_WT15.2.1_ctl <- results(dds_evol_individual, contrast=list("Isolate_WT15.1.2_vs_WT.C1","Isolate_WT15.2.1_vs_WT.C1"),alpha = 0.05)
-res_WT15.1.2_vs_WT15.2.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_WT15.1.2_vs_WT.C1","Isolate_WT15.2.2_vs_WT.C1"),alpha = 0.05)
-res_WT15.1.2_vs_WT15.4.1_ctl <- results(dds_evol_individual, contrast=list("Isolate_WT15.1.2_vs_WT.C1","Isolate_WT15.4.1_vs_WT.C1"),alpha = 0.05)
-res_WT15.1.2_vs_WT15.4.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_WT15.1.2_vs_WT.C1","Isolate_WT15.4.2_vs_WT.C1"),alpha = 0.05)
-
-res_WT15.2.1_vs_WT15.1.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_WT15.2.1_vs_WT.C1","Isolate_WT15.1.2_vs_WT.C1"),alpha = 0.05)
-res_WT15.2.1_vs_WT15.2.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_WT15.2.1_vs_WT.C1","Isolate_WT15.2.2_vs_WT.C1"),alpha = 0.05)
-res_WT15.2.1_vs_WT15.4.1_ctl <- results(dds_evol_individual, contrast=list("Isolate_WT15.2.1_vs_WT.C1","Isolate_WT15.4.1_vs_WT.C1"),alpha = 0.05)
-res_WT15.2.1_vs_WT15.4.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_WT15.2.1_vs_WT.C1","Isolate_WT15.4.2_vs_WT.C1"),alpha = 0.05)
-
-res_WT15.2.2_vs_WT15.1.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_WT15.2.2_vs_WT.C1","Isolate_WT15.1.2_vs_WT.C1"),alpha = 0.05)
-res_WT15.2.2_vs_WT15.2.1_ctl <- results(dds_evol_individual, contrast=list("Isolate_WT15.2.2_vs_WT.C1","Isolate_WT15.2.1_vs_WT.C1"),alpha = 0.05)
-res_WT15.2.2_vs_WT15.4.1_ctl <- results(dds_evol_individual, contrast=list("Isolate_WT15.2.2_vs_WT.C1","Isolate_WT15.4.1_vs_WT.C1"),alpha = 0.05)
-res_WT15.2.2_vs_WT15.4.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_WT15.2.2_vs_WT.C1","Isolate_WT15.4.2_vs_WT.C1"),alpha = 0.05)
-
-res_WT15.4.1_vs_WT15.1.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_WT15.4.1_vs_WT.C1","Isolate_WT15.1.2_vs_WT.C1"),alpha = 0.05)
-res_WT15.4.1_vs_WT15.2.1_ctl <- results(dds_evol_individual, contrast=list("Isolate_WT15.4.1_vs_WT.C1","Isolate_WT15.2.1_vs_WT.C1"),alpha = 0.05)
-res_WT15.4.1_vs_WT15.2.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_WT15.4.1_vs_WT.C1","Isolate_WT15.2.2_vs_WT.C1"),alpha = 0.05)
-res_WT15.4.1_vs_WT15.4.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_WT15.4.1_vs_WT.C1","Isolate_WT15.4.2_vs_WT.C1"),alpha = 0.05)
-
-res_WT15.4.2_vs_WT15.1.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_WT15.4.2_vs_WT.C1","Isolate_WT15.1.2_vs_WT.C1"),alpha = 0.05)
-res_WT15.4.2_vs_WT15.2.1_ctl <- results(dds_evol_individual, contrast=list("Isolate_WT15.4.2_vs_WT.C1","Isolate_WT15.2.1_vs_WT.C1"),alpha = 0.05)
-res_WT15.4.2_vs_WT15.2.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_WT15.4.2_vs_WT.C1","Isolate_WT15.2.2_vs_WT.C1"),alpha = 0.05)
-res_WT15.4.2_vs_WT15.4.1_ctl <- results(dds_evol_individual, contrast=list("Isolate_WT15.4.2_vs_WT.C1","Isolate_WT15.4.1_vs_WT.C1"),alpha = 0.05)
-
-###Within differences of the evolved PKS15 lines
-res_PKS15.1.1_vs_PKS15.2.1_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.1.1_vs_WT.C1","Isolate_PKS15.2.1_vs_WT.C1"),alpha = 0.05)
-res_PKS15.1.1_vs_PKS15.2.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.1.1_vs_WT.C1","Isolate_PKS15.2.2_vs_WT.C1"),alpha = 0.05)
-res_PKS15.1.1_vs_PKS15.3.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.1.1_vs_WT.C1","Isolate_PKS15.3.2_vs_WT.C1"),alpha = 0.05)
-res_PKS15.1.1_vs_PKS15.4.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.1.1_vs_WT.C1","Isolate_PKS15.4.2_vs_WT.C1"),alpha = 0.05)
-
-res_PKS15.2.1_vs_PKS15.1.1_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.2.1_vs_WT.C1","Isolate_PKS15.1.1_vs_WT.C1"),alpha = 0.05)
-res_PKS15.2.1_vs_PKS15.2.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.2.1_vs_WT.C1","Isolate_PKS15.2.2_vs_WT.C1"),alpha = 0.05)
-res_PKS15.2.1_vs_PKS15.3.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.2.1_vs_WT.C1","Isolate_PKS15.3.2_vs_WT.C1"),alpha = 0.05)
-res_PKS15.2.1_vs_PKS15.4.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.2.1_vs_WT.C1","Isolate_PKS15.4.2_vs_WT.C1"),alpha = 0.05)
-
-res_PKS15.2.2_vs_PKS15.1.1_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.2.2_vs_WT.C1","Isolate_PKS15.1.1_vs_WT.C1"),alpha = 0.05)
-res_PKS15.2.2_vs_PKS15.2.1_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.2.2_vs_WT.C1","Isolate_PKS15.2.1_vs_WT.C1"),alpha = 0.05)
-res_PKS15.2.2_vs_PKS15.3.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.2.2_vs_WT.C1","Isolate_PKS15.3.2_vs_WT.C1"),alpha = 0.05)
-res_PKS15.2.2_vs_PKS15.4.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.2.2_vs_WT.C1","Isolate_PKS15.4.2_vs_WT.C1"),alpha = 0.05)
-
-res_PKS15.3.2_vs_PKS15.1.1_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.3.2_vs_WT.C1","Isolate_PKS15.1.1_vs_WT.C1"),alpha = 0.05)
-res_PKS15.3.2_vs_PKS15.2.1_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.3.2_vs_WT.C1","Isolate_PKS15.2.1_vs_WT.C1"),alpha = 0.05)
-res_PKS15.3.2_vs_PKS15.2.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.3.2_vs_WT.C1","Isolate_PKS15.2.2_vs_WT.C1"),alpha = 0.05)
-res_PKS15.3.2_vs_PKS15.4.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.3.2_vs_WT.C1","Isolate_PKS15.4.2_vs_WT.C1"),alpha = 0.05)
-
-res_PKS15.4.2_vs_PKS15.1.1_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.4.2_vs_WT.C1","Isolate_PKS15.1.1_vs_WT.C1"),alpha = 0.05)
-res_PKS15.4.2_vs_PKS15.2.1_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.4.2_vs_WT.C1","Isolate_PKS15.2.1_vs_WT.C1"),alpha = 0.05)
-res_PKS15.4.2_vs_PKS15.2.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.4.2_vs_WT.C1","Isolate_PKS15.2.2_vs_WT.C1"),alpha = 0.05)
-res_PKS15.4.2_vs_PKS15.3.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.4.2_vs_WT.C1","Isolate_PKS15.3.2_vs_WT.C1"),alpha = 0.05)
-
-###Between differences of the evolved WT15 and PKS15 lines
-res_PKS15.1.1_vs_WT15.1.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.1.1_vs_WT.C1","Isolate_WT15.1.2_vs_WT.C1"),alpha = 0.05)
-res_PKS15.1.1_vs_WT15.2.1_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.1.1_vs_WT.C1","Isolate_WT15.2.1_vs_WT.C1"),alpha = 0.05)
-res_PKS15.1.1_vs_WT15.2.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.1.1_vs_WT.C1","Isolate_WT15.2.2_vs_WT.C1"),alpha = 0.05)
-res_PKS15.1.1_vs_WT15.4.1_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.1.1_vs_WT.C1","Isolate_WT15.4.1_vs_WT.C1"),alpha = 0.05)
-res_PKS15.1.1_vs_WT15.4.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.1.1_vs_WT.C1","Isolate_WT15.4.2_vs_WT.C1"),alpha = 0.05)
-
-res_PKS15.2.1_vs_WT15.1.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.2.1_vs_WT.C1","Isolate_WT15.1.2_vs_WT.C1"),alpha = 0.05)
-res_PKS15.2.1_vs_WT15.2.1_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.2.1_vs_WT.C1","Isolate_WT15.2.1_vs_WT.C1"),alpha = 0.05)
-res_PKS15.2.1_vs_WT15.2.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.2.1_vs_WT.C1","Isolate_WT15.2.2_vs_WT.C1"),alpha = 0.05)
-res_PKS15.2.1_vs_WT15.4.1_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.2.1_vs_WT.C1","Isolate_WT15.4.1_vs_WT.C1"),alpha = 0.05)
-res_PKS15.2.1_vs_WT15.4.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.2.1_vs_WT.C1","Isolate_WT15.4.2_vs_WT.C1"),alpha = 0.05)
-
-res_PKS15.2.2_vs_WT15.1.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.2.2_vs_WT.C1","Isolate_WT15.1.2_vs_WT.C1"),alpha = 0.05)
-res_PKS15.2.2_vs_WT15.2.1_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.2.2_vs_WT.C1","Isolate_WT15.2.1_vs_WT.C1"),alpha = 0.05)
-res_PKS15.2.2_vs_WT15.2.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.2.2_vs_WT.C1","Isolate_WT15.2.2_vs_WT.C1"),alpha = 0.05)
-res_PKS15.2.2_vs_WT15.4.1_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.2.2_vs_WT.C1","Isolate_WT15.4.1_vs_WT.C1"),alpha = 0.05)
-res_PKS15.2.2_vs_WT15.4.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.2.2_vs_WT.C1","Isolate_WT15.4.2_vs_WT.C1"),alpha = 0.05)
-
-res_PKS15.3.2_vs_WT15.1.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.3.2_vs_WT.C1","Isolate_WT15.1.2_vs_WT.C1"),alpha = 0.05)
-res_PKS15.3.2_vs_WT15.2.1_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.3.2_vs_WT.C1","Isolate_WT15.2.1_vs_WT.C1"),alpha = 0.05)
-res_PKS15.3.2_vs_WT15.2.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.3.2_vs_WT.C1","Isolate_WT15.2.2_vs_WT.C1"),alpha = 0.05)
-res_PKS15.3.2_vs_WT15.4.1_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.3.2_vs_WT.C1","Isolate_WT15.4.1_vs_WT.C1"),alpha = 0.05)
-res_PKS15.3.2_vs_WT15.4.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.3.2_vs_WT.C1","Isolate_WT15.4.2_vs_WT.C1"),alpha = 0.05)
-
-res_PKS15.4.2_vs_WT15.1.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.4.2_vs_WT.C1","Isolate_WT15.1.2_vs_WT.C1"),alpha = 0.05)
-res_PKS15.4.2_vs_WT15.2.1_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.4.2_vs_WT.C1","Isolate_WT15.2.1_vs_WT.C1"),alpha = 0.05)
-res_PKS15.4.2_vs_WT15.2.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.4.2_vs_WT.C1","Isolate_WT15.2.2_vs_WT.C1"),alpha = 0.05)
-res_PKS15.4.2_vs_WT15.4.1_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.4.2_vs_WT.C1","Isolate_WT15.4.1_vs_WT.C1"),alpha = 0.05)
-res_PKS15.4.2_vs_WT15.4.2_ctl <- results(dds_evol_individual, contrast=list("Isolate_PKS15.4.2_vs_WT.C1","Isolate_WT15.4.2_vs_WT.C1"),alpha = 0.05)
 
 
-Plot_results<-function(res){
-  name<-deparse(substitute(res))
-  ix = which.min(res$padj) # most significant
-  res <- res[order(res$padj),] # sort
-  res$id<-as.character(gsub("jgi.p.*Exode1.","",row.names(res)))
-  pdf(paste0("output_group/",name,".pdf"))
-  par(mfrow=c(2,1))
-  barplot(assay(dds)[ix,],las=2, main=rownames(dds)[ ix  ]) #Here we show the most significant gene.
-  plotMA(res)
-  graphics.off()
-  ###Volcano plots
-  pdf(paste0("output_group/",name,".volcano.pdf"))
-  p<-DEGreport::degVolcano(
-    data.frame(res[,c("log2FoldChange","padj")]), # table - 2 columns
-    plot_text = data.frame(res[1:5,c("log2FoldChange","padj","id")])) # table to add names
-  print(p)
-  graphics.off()
-  #Create a tibble of results (all the genes with transcripts)
-  res_tableOE_tb <- res%>%
-    data.frame() %>%
-    rownames_to_column(var="gene") %>% 
-    as_tibble()
-  res_tableOE_tb <- res_tableOE_tb %>% 
-    mutate(threshold_OE = padj < 0.05 & abs(log2FoldChange) >= 0.58)
-  # Compare to numbers we had from Wald test
-  sigOE <- res_tableOE_tb %>%
-    filter(padj < 0.05)
-  ## Volcano plot
-  ###output in table format significant genes 
-  write.csv(as.data.frame(sigOE), 
-            file=paste0("output_group/",name,".csv"))
-}
+################ Compare GO enrichment across Isolates ###############
+######## Read in Data frames of enriched terms per comparisons #######
+## Populations: irr vs ctl
+Pop_irr_vs_ctl.go<-c("res_WT_irr_vs_ctl.GO_KEGG_KOG_IPR_annotation.csv",
+                     "res_PKS_irr_vs_ctl.GO_KEGG_KOG_IPR_annotation.csv",
+                     "res_WT15_irr_vs_ctl.GO_KEGG_KOG_IPR_annotation.csv",
+                     "res_PKS15_irr_vs_ctl.GO_KEGG_KOG_IPR_annotation.csv",
+                     "res_PKS15_vs_WT15_irr_vs_ctl.GO_KEGG_KOG_IPR_annotation.csv")
 
-Plot_results(res_WT_irr_vs_ctl)
-Plot_results(res_PKS_vs_WT_irr_vs_ctl)
-Plot_results(res_WT15common_vs_WT_irr_vs_ctl)
-Plot_results(res_PKS15common_vs_PKS_irr_vs_ctl)
-Plot_results(res_PKS15common_vs_WT15common_irr_vs_ctl)
+Pop_irr_vs_ctl.go<-do.call(rbind, lapply(Pop_irr_vs_ctl.go, function(x) read.csv(paste0("./output_group/",x),header=TRUE)))
+Pop_irr_vs_ctl.go<-compareCluster(gene~Isolate+regulation, data=Pop_irr_vs_ctl.go, fun="enricher",TERM2GENE=term2gene_go)
 
-Plot_results(res_WT15common_vs_WT_irr) 
-Plot_results(res_WT15common_vs_WT_ctl)
-Plot_results(res_PKS15common_vs_PKS_irr)
-Plot_results(res_PKS15common_vs_PKS_ctl)
-Plot_results(res_PKS15_vs_WT15_irr)
-Plot_results(res_PKS15_vs_WT15_ctl)
+Pop_irr_vs_ctl.go@compareClusterResult$regulation<-factor(Pop_irr_vs_ctl.go@compareClusterResult$regulation, levels = c("up", "down"))
+Pop_irr_vs_ctl.go@compareClusterResult$Isolate<-factor(Pop_irr_vs_ctl.go@compareClusterResult$Isolate, 
+                                                       levels = c("WTC", "PKSC","WT15","PKS15","PKS15_vs_WT15"))
+Pop_irr_vs_ctl.go.plot<-dotplot(Pop_irr_vs_ctl.go,x="Isolate")+ 
+  facet_wrap(~regulation,scales="free_y")+xlab("")+
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
 
-Plot_results(res_WT15.1.2_vs_WT_irr) 
-Plot_results(res_WT15.2.1_vs_WT_irr) 
-Plot_results(res_WT15.2.2_vs_WT_irr) 
-Plot_results(res_WT15.4.1_vs_WT_irr) 
-Plot_results(res_WT15.4.2_vs_WT_irr) 
-Plot_results(res_PKS15.1.1_vs_PKS_irr) 
-Plot_results(res_PKS15.2.1_vs_PKS_irr) 
-Plot_results(res_PKS15.2.2_vs_PKS_irr) 
-Plot_results(res_PKS15.3.2_vs_PKS_irr) 
-Plot_results(res_PKS15.4.2_vs_PKS_irr) 
-Plot_results(res_WT15.1.2_vs_WT_ctl) 
-Plot_results(res_WT15.2.1_vs_WT_ctl) 
-Plot_results(res_WT15.2.2_vs_WT_ctl) 
-Plot_results(res_WT15.4.1_vs_WT_ctl) 
-Plot_results(res_WT15.4.2_vs_WT_ctl) 
-Plot_results(res_PKS15.1.1_vs_PKS_ctl) 
-Plot_results(res_PKS15.2.1_vs_PKS_ctl) 
-Plot_results(res_PKS15.2.2_vs_PKS_ctl) 
-Plot_results(res_PKS15.3.2_vs_PKS_ctl) 
-Plot_results(res_PKS15.4.2_vs_PKS_ctl) 
+## Populations: 15 vs C (irr and ctl)
+Pop_15_vs_C_irr_ctl.go<-c("res_WT15_vs_WT_irr.GO_KEGG_KOG_IPR_annotation.csv",
+                          "res_PKS15_vs_PKS_irr.GO_KEGG_KOG_IPR_annotation.csv",
+                          "res_PKS15_vs_WT15_irr.GO_KEGG_KOG_IPR_annotation.csv",
+                          "res_WT15_vs_WT_ctl.GO_KEGG_KOG_IPR_annotation.csv",
+                          "res_PKS15_vs_PKS_ctl.GO_KEGG_KOG_IPR_annotation.csv",
+                          "res_PKS15_vs_WT15_ctl.GO_KEGG_KOG_IPR_annotation.csv")
+
+Pop_15_vs_C_irr_ctl.go<-do.call(rbind, lapply(Pop_15_vs_C_irr_ctl.go, function(x) read.csv(paste0("./output_group/",x),header=TRUE)))
+Pop_15_vs_C_irr_ctl.go<-compareCluster(gene~Isolate+condition+regulation, data=Pop_15_vs_C_irr_ctl.go, fun="enricher",TERM2GENE=term2gene_go)
+
+Pop_15_vs_C_irr_ctl.go@compareClusterResult$regulation<-factor(Pop_15_vs_C_irr_ctl.go@compareClusterResult$regulation, levels = c("up", "down"))
+Pop_15_vs_C_irr_ctl.go@compareClusterResult$Isolate<-factor(Pop_15_vs_C_irr_ctl.go@compareClusterResult$Isolate, 
+                                                            levels = c("WT15_vs_WTC", "PKS15_vs_PKSC","PKS15_vs_WT15"))
+Pop_15_vs_C_irr_ctl.go@compareClusterResult$condition<-gsub("irr","irradiated",Pop_15_vs_C_irr_ctl.go@compareClusterResult$condition)
+Pop_15_vs_C_irr_ctl.go@compareClusterResult$condition<-gsub("ctl","non-irradiated",Pop_15_vs_C_irr_ctl.go@compareClusterResult$condition)
+Pop_15_vs_C_irr_ctl.go@compareClusterResult$condition<-factor(Pop_15_vs_C_irr_ctl.go@compareClusterResult$condition, 
+                                                              levels = c("non-irradiated", "irradiated"))
+
+Pop_15_vs_C_irr_ctl.go.plot<-dotplot(Pop_15_vs_C_irr_ctl.go,x="Isolate")+ 
+  facet_wrap(condition~regulation,scales="free_y", labeller = label_wrap_gen(multi_line=FALSE))+xlab("")+
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+
+## Individuals: irr vs ctl
+Ind_irr_vs_ctl.go<-c("res_WT_irr_vs_ctl.GO_KEGG_KOG_IPR_annotation.csv",
+                     "res_WT15_irr_vs_ctl.GO_KEGG_KOG_IPR_annotation.csv",
+                     "res_WT15.1.2_irr_vs_ctl.GO_KEGG_KOG_IPR_annotation.csv",
+                     "res_WT15.2.1_irr_vs_ctl.GO_KEGG_KOG_IPR_annotation.csv",
+                     "res_WT15.2.2_irr_vs_ctl.GO_KEGG_KOG_IPR_annotation.csv",
+                     "res_WT15.4.1_irr_vs_ctl.GO_KEGG_KOG_IPR_annotation.csv",
+                     "res_WT15.4.2_irr_vs_ctl.GO_KEGG_KOG_IPR_annotation.csv",
+                     "res_PKS_irr_vs_ctl.GO_KEGG_KOG_IPR_annotation.csv",
+                     "res_PKS15_irr_vs_ctl.GO_KEGG_KOG_IPR_annotation.csv",
+                     "res_PKS15.1.1_irr_vs_ctl.GO_KEGG_KOG_IPR_annotation.csv",
+                     "res_PKS15.2.1_irr_vs_ctl.GO_KEGG_KOG_IPR_annotation.csv",
+                     "res_PKS15.2.2_irr_vs_ctl.GO_KEGG_KOG_IPR_annotation.csv",
+                     "res_PKS15.3.2_irr_vs_ctl.GO_KEGG_KOG_IPR_annotation.csv",
+                     "res_PKS15.4.2_irr_vs_ctl.GO_KEGG_KOG_IPR_annotation.csv",
+                     "res_PKS15_vs_WT15_irr_vs_ctl.GO_KEGG_KOG_IPR_annotation.csv"
+)
+
+Ind_irr_vs_ctl.go<-do.call(rbind, lapply(Ind_irr_vs_ctl.go, function(x) read.csv(paste0("./output_group/",x),header=TRUE)))
+Ind_irr_vs_ctl.go<-compareCluster(gene~regulation+Isolate, data=Ind_irr_vs_ctl.go, fun="enricher",TERM2GENE=term2gene_go)
+
+Ind_irr_vs_ctl.go@compareClusterResult$regulation<-factor(Ind_irr_vs_ctl.go@compareClusterResult$regulation, levels = c("up", "down"))
+
+Ind_irr_vs_ctl.go@compareClusterResult$Isolate<-gsub("up.|down.","",Ind_irr_vs_ctl.go@compareClusterResult$Cluster)
+Ind_irr_vs_ctl.go@compareClusterResult$Isolate<-factor(Ind_irr_vs_ctl.go@compareClusterResult$Isolate, 
+                                                       levels = c("WTC","WT15","WT15.1.2","WT15.2.1","WT15.2.2","WT15.4.1","WT15.4.2",
+                                                                  "PKSC","PKS15","PKS15.1.1","PKS15.2.1","PKS15.2.2","PKS15.3.2","PKS15.4.2","PKS15_vs_WT15"))
+Ind_irr_vs_ctl.go.plot<-dotplot(Ind_irr_vs_ctl.go,x="Isolate")+ 
+  facet_wrap(~regulation,scales="free_y")+xlab("")+
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+
+## Individuals: 15 vs C (irr)
+Ind_15_vs_C_irr.go<-c("res_WT15_vs_WT_irr.GO_KEGG_KOG_IPR_annotation.csv",
+                      "res_WT15.1.2_vs_WT_irr.GO_KEGG_KOG_IPR_annotation.csv",
+                      "res_WT15.2.1_vs_WT_irr.GO_KEGG_KOG_IPR_annotation.csv",
+                      "res_WT15.2.2_vs_WT_irr.GO_KEGG_KOG_IPR_annotation.csv",
+                      "res_WT15.4.1_vs_WT_irr.GO_KEGG_KOG_IPR_annotation.csv",
+                      "res_WT15.4.2_vs_WT_irr.GO_KEGG_KOG_IPR_annotation.csv",
+                      "res_PKS15_vs_PKS_irr.GO_KEGG_KOG_IPR_annotation.csv",
+                      "res_PKS15.1.1_vs_PKS_irr.GO_KEGG_KOG_IPR_annotation.csv",
+                      "res_PKS15.2.1_vs_PKS_irr.GO_KEGG_KOG_IPR_annotation.csv",
+                      "res_PKS15.2.2_vs_PKS_irr.GO_KEGG_KOG_IPR_annotation.csv",
+                      "res_PKS15.3.2_vs_PKS_irr.GO_KEGG_KOG_IPR_annotation.csv",
+                      "res_PKS15.4.2_vs_PKS_irr.GO_KEGG_KOG_IPR_annotation.csv",
+                      "res_PKS15_vs_WT15_irr.GO_KEGG_KOG_IPR_annotation.csv")
+Ind_15_vs_C_irr.go<-do.call(rbind, lapply(Ind_15_vs_C_irr.go, function(x) read.csv(paste0("./output_group/",x),header=TRUE)))
+Ind_15_vs_C_irr.go<-compareCluster(gene~regulation+Isolate, data=Ind_15_vs_C_irr.go, fun="enricher",TERM2GENE=term2gene_go)
+Ind_15_vs_C_irr.go@compareClusterResult$regulation<-factor(Ind_15_vs_C_irr.go@compareClusterResult$regulation, levels = c("up", "down"))
+Ind_15_vs_C_irr.go@compareClusterResult$Isolate<-gsub("up.|down.","",Ind_15_vs_C_irr.go@compareClusterResult$Cluster)
+Ind_15_vs_C_irr.go@compareClusterResult$Isolate<-factor(Ind_15_vs_C_irr.go@compareClusterResult$Isolate, 
+                                                        levels = c("WT15_vs_WTC",#No DEGs for this profile
+                                                                   "WT15.1.2_vs_WTC","WT15.2.1_vs_WTC","WT15.2.2_vs_WTC","WT15.4.1_vs_WTC","WT15.4.2_vs_WTC",
+                                                                   "PKS15_vs_PKSC","PKS15.1.1_vs_PKSC","PKS15.2.1_vs_PKSC","PKS15.2.2_vs_PKSC","PKS15.3.2_vs_PKSC","PKS15.4.2_vs_PKSC","PKS15_vs_WT15"))
+Ind_15_vs_C_irr.go.plot<-dotplot(Ind_15_vs_C_irr.go,x="Isolate")+ 
+  facet_wrap(~regulation,scales = "free_y")+xlab("")+
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+
+## Individuals: 15 vs C (ctl)
+Ind_15_vs_C_ctl.go<-c("res_WT15_vs_WT_ctl.GO_KEGG_KOG_IPR_annotation.csv",
+                      "res_WT15.1.2_vs_WT_ctl.GO_KEGG_KOG_IPR_annotation.csv",
+                      "res_WT15.2.1_vs_WT_ctl.GO_KEGG_KOG_IPR_annotation.csv",
+                      "res_WT15.2.2_vs_WT_ctl.GO_KEGG_KOG_IPR_annotation.csv",
+                      "res_WT15.4.1_vs_WT_ctl.GO_KEGG_KOG_IPR_annotation.csv",
+                      "res_WT15.4.2_vs_WT_ctl.GO_KEGG_KOG_IPR_annotation.csv",
+                      "res_PKS15_vs_PKS_ctl.GO_KEGG_KOG_IPR_annotation.csv",
+                      "res_PKS15.1.1_vs_PKS_ctl.GO_KEGG_KOG_IPR_annotation.csv",
+                      "res_PKS15.2.1_vs_PKS_ctl.GO_KEGG_KOG_IPR_annotation.csv",
+                      "res_PKS15.2.2_vs_PKS_ctl.GO_KEGG_KOG_IPR_annotation.csv",
+                      "res_PKS15.3.2_vs_PKS_ctl.GO_KEGG_KOG_IPR_annotation.csv",
+                      "res_PKS15.4.2_vs_PKS_ctl.GO_KEGG_KOG_IPR_annotation.csv",
+                      "res_PKS15_vs_WT15_ctl.GO_KEGG_KOG_IPR_annotation.csv"
+)
+
+Ind_15_vs_C_ctl.go<-do.call(rbind, lapply(Ind_15_vs_C_ctl.go, function(x) read.csv(paste0("./output_group/",x),header=TRUE)))
+Ind_15_vs_C_ctl.go<-compareCluster(gene~regulation+Isolate, data=Ind_15_vs_C_ctl.go, fun="enricher",TERM2GENE=term2gene_go)
+
+Ind_15_vs_C_ctl.go@compareClusterResult$regulation<-factor(Ind_15_vs_C_ctl.go@compareClusterResult$regulation, levels = c("up", "down"))
+
+Ind_15_vs_C_ctl.go@compareClusterResult$Isolate<-gsub("up.|down.","",Ind_15_vs_C_ctl.go@compareClusterResult$Cluster)
+Ind_15_vs_C_ctl.go@compareClusterResult$Isolate<-factor(Ind_15_vs_C_ctl.go@compareClusterResult$Isolate, 
+                                                        levels = c("WT15_vs_WTC","WT15.1.2_vs_WTC","WT15.2.1_vs_WTC","WT15.2.2_vs_WTC","WT15.4.1_vs_WTC","WT15.4.2_vs_WTC",
+                                                                   "PKS15_vs_PKSC","PKS15.1.1_vs_PKSC","PKS15.2.1_vs_PKSC","PKS15.2.2_vs_PKSC","PKS15.3.2_vs_PKSC","PKS15.4.2_vs_PKSC","PKS15_vs_WT15"))
+Ind_15_vs_C_ctl.go.plot<-dotplot(Ind_15_vs_C_ctl.go,x="Isolate")+ 
+  facet_wrap(~regulation,scales="free_y")+xlab("")+
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+
+
+############################### Figure 3 ########################################
+Ind_irr_vs_ctl.go.plot<-dotplot(Ind_irr_vs_ctl.go,x="Isolate")+ 
+  facet_wrap(~regulation,scales="free_y")+xlab("")+
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1,size=10),
+        axis.text.y = element_text(lineheight = 0.75,size=10),
+        legend.text = element_text(size=7))
+
+pdf("output_group/evolFig3_WT15_PKS15_WTC_PKSC_irr_vs_ctl_GOenrich.pdf",width = 15,height=8.5)
+Ind_irr_vs_ctl.go.plot
+graphics.off()
+
+pdf("output_group/evolFig_Populations_irr_vs_ctl_GOenrich.pdf",width = 11,height=8.5)
+Pop_irr_vs_ctl.go.plot
+graphics.off()
+############################### Figure 4 ########################################
+Ind_15_vs_C_ctl.go.plot<-dotplot(Ind_15_vs_C_ctl.go,x="Isolate")+ 
+  facet_wrap(~regulation,scales="free_y")+xlab("")+
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1,size=7),
+        axis.text.y = element_text(lineheight = 0.75,size=7),
+        legend.text = element_text(size=7),
+        legend.title = element_text(size=7),
+        legend.key.size = unit(0.4,'cm'))+
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 45))
+
+pdf("output_group/evolFig4_WT15_PKS15_ctl_GOenrich.pdf",width = 11*1.25,height=8.5*1.25)
+Pop_irr_vs_ctl.go.plot
+graphics.off()
+
+
+Pop_15_vs_C_irr_ctl.go.plot<-dotplot(Pop_15_vs_C_irr_ctl.go,x="Isolate")+ 
+  facet_wrap(condition~regulation,scales="free_y", labeller = label_wrap_gen(multi_line=FALSE))+xlab("")+
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        axis.text.y = element_text(lineheight = 0.75,size=7),
+        legend.text = element_text(size=7),
+        legend.title = element_text(size=7))
+pdf("output_group/evolFig_Populations_irr_ctl_GOenrich.pdf",width = 11,height=8.5)
+Pop_15_vs_C_irr_ctl.go.plot
+graphics.off()
+############################### Figure 5 ########################################
+Ind_15_vs_C_irr.go.plot<-dotplot(Ind_15_vs_C_irr.go,x="Isolate")+ 
+  facet_wrap(~regulation,scales="free_y")+xlab("")+
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1,size=7),
+        axis.text.y = element_text(lineheight = 0.75,size=7),
+        legend.text = element_text(size=7))+
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 40))
+
+
+pdf("output_group/evolFig5_WT15_PKS15_irr_GOenrich.pdf",width = 11,height=8.5)
+Ind_15_vs_C_irr.go.plot
+graphics.off()
 
 ######################################################################
 ### GO Enrichment Analysis ###########################################
@@ -615,6 +613,7 @@ Plot_results(res_PKS15.4.2_vs_PKS_ctl)
 GO_results<-function(res){
   ## assign up/down regulation
   name<-deparse(substitute(res))
+  name<-gsub("common","",name)
   res$regulation<-NULL
   res$regulation[res$log2FoldChange<0]<-"down"
   res$regulation[res$log2FoldChange>0]<-"up"
@@ -634,9 +633,6 @@ GO_results<-function(res){
     filter(padj < 0.05 & threshold_OE==TRUE)
   ## Volcano plot
   sigOE_genes <- as.character(sigOE$gene)
-  #term2gene_BP<-term2gene[which(term2gene$keytypes=="BP"),]
-  #term2gene_CC<-term2gene[which(term2gene$keytypes=="CC"),]
-  #term2gene_MF<-term2gene[which(term2gene$keytypes=="MF"),]
   counts<-ggplot(data=sigOE, aes(x=regulation,fill=regulation)) +
     geom_bar(stat="count")+
     scale_x_discrete(limits=rev)+xlab("Direction of regulation")+
@@ -646,6 +642,22 @@ GO_results<-function(res){
     theme_classic()
   gene.counts[[name]]<<-counts
   gene.counts.numbers[[name]]<<-table(sigOE$regulation)
+  #### Table of all the data
+  #### Annotation of all GO,KEGG,KOG,IPR
+  res_ids <- left_join(res_tableOE_tb, ed_gff_go, by=c("gene"="gene_name"))  
+  res_ids <- left_join(res_ids, ed_gff_kegg, by=c("gene"="gene_name")) 
+  res_ids <- left_join(res_ids, ed_gff_kog, by=c("gene"="gene_name")) 
+  res_ids <- left_join(res_ids, ed_gff_ipr, by=c("gene"="gene_name")) 
+  res_sigOEids <- res_ids %>%
+    filter(padj < 0.05 & threshold_OE==TRUE)
+  
+  res_sigOEids$comparison<-gsub("res_","",name)
+  res_sigOEids$comparison<-gsub("WT_","WTC_",res_sigOEids$comparison)
+  res_sigOEids$comparison<-gsub("PKS_","PKSC_",res_sigOEids$comparison)
+  res_sigOEids$Isolate<-gsub("_irr.*|_ctl.*","",res_sigOEids$comparison)
+  res_sigOEids$condition<-gsub(paste0(unique(res_sigOEids$Isolate),"_"),"",res_sigOEids$comparison)
+  write.csv(as.data.frame(res_sigOEids), 
+            file=paste0("output_group/",name,".GO_KEGG_KOG_IPR_annotation.csv"))
   ########### GO Enrichment #########################
   ego <- enricher(gene = sigOE_genes, 
                   universe = allOE_genes,
@@ -675,100 +687,37 @@ GO_results<-function(res){
     return(a2)})
   GO.plot.down[[name]]<<-a2
   a3<-ggarrange(a1,a2,ncol=2,common.legend = TRUE, legend = "right")
-  # #a<-dotplot(ego,orderBy="GeneRatio")
-  # ## Output results from GO analysis to a table
-  # cluster_summary <- data.frame(ego)
-  # ## Add similarity matrix to the termsim slot of enrichment result
-  # ego <- enrichplot::pairwise_termsim(ego)
-  # ## Enrichmap clusters the 50 most significant (by padj) GO terms to visualize relationships between terms
-  # b<-emapplot(ego, showCategory = 50)
-  # ## To color genes by log2 fold changes, we need to extract the log2 fold changes from our results table creating a named vector
-  # OE_foldchanges <- sigOE$log2FoldChange
-  # names(OE_foldchanges) <- sigOE$gene
-  # ## Cnetplot details the genes associated with one or more terms - by default gives the top 5 significant terms (by padj)
-  # c<-cnetplot(ego, 
-  #          categorySize="pvalue", 
-  #          showCategory = 5, 
-  #          foldChange=OE_foldchanges,
-  #          node_label_size=2)
   pdf(paste0("output_group/",name,".GO.pdf"),width=10,height=8)
   print(a3)
   graphics.off()
-  write.table(summary(ego_up)[,-6][,-8], paste0("output_group/Supplementary_",name,"_go_up.txt"), sep="\t", row.names=F, quote=F)
-  write.table(summary(ego_down)[,-6][,-8], paste0("output_group/Supplementary_",name,"_go_down.txt"), sep="\t", row.names=F, quote=F)
+  ###format tables to include comparison information and upregulated/downregulated
+  ego_up<-as.data.frame(ego_up)
+  ego_down<-as.data.frame(ego_down)
+  ##set NA row just in case there is no enriched terms data
+  ego_up["NA",]<-"NA" 
+  ego_down["NA",]<-"NA" 
+  ego_up$group<-"upregulated"
+  ego_down$group<-"downregulated"
+  ego_up$comparison<-gsub("res_","",name)
+  ego_down$comparison<-gsub("res_","",name)
+  ego_up$Isolate<-gsub("_irr.*|_ctl.*","",ego_up$comparison)
+  ego_down$Isolate<-gsub("_irr.*|_ctl.*","",ego_down$comparison)
+  ego_up$condition<-gsub(paste0(unique(ego_up$Isolate),"_"),"",ego_up$comparison)
+  ego_down$condition<-gsub(paste0(unique(ego_down$Isolate),"_"),"",ego_down$comparison)
+  ego<-rbind(ego_up,ego_down)
   
-  # ########### KEGG pathway analysis ######################### 
-  # ekegg <- enricher(gene = sigOE_genes, 
-  #                 universe = allOE_genes,
-  #                 pAdjustMethod = "BH",
-  #                 qvalueCutoff = 0.05,
-  #                 TERM2GENE = term2gene_kegg[,c("pathway","gene_name")])
-  # 
-  # ekegg_up <- enricher(gene = as.character(sigOE$gene[sigOE$regulation=="up"]), 
-  #                    universe = allOE_genes,
-  #                    pAdjustMethod = "BH",
-  #                    qvalueCutoff = 0.05,
-  #                    TERM2GENE = term2gene_kegg[,c("pathway","gene_name")])
-  # a<-dotplot(ekegg_up,orderBy="GeneRatio")
-  # ekegg_down <- enricher(gene = as.character(sigOE$gene[sigOE$regulation=="down"]), 
-  #                      universe = allOE_genes,
-  #                      pAdjustMethod = "BH",
-  #                      qvalueCutoff = 0.05,
-  #                      TERM2GENE = term2gene_kegg[,c("pathway","gene_name")])
-  # b<-dotplot(ekegg_down,orderBy="GeneRatio")
-  # # c<-cnetplot(ekegg, 
-  # #             categorySize="pvalue", 
-  # #             showCategory = 5, 
-  # #             foldChange=OE_foldchanges, 
-  # #             vertex.label.font=6)
-  # pdf(paste0("output_group/",name,".KEGG.pdf"),width=14,height=18)
-  # print(ggarrange(a,b)) 
-  # graphics.off()
-  # ########### KOG Enrichment #########################
-  # ekog <- enricher(gene = sigOE_genes, 
-  #                   universe = allOE_genes,
-  #                   pAdjustMethod = "BH",
-  #                   qvalueCutoff = 0.05,
-  #                   TERM2GENE = term2gene_kog[,c("kogdefline","gene_name")])
-  # 
-  # ekog_up <- enricher(gene = as.character(sigOE$gene[sigOE$regulation=="up"]), 
-  #                      universe = allOE_genes,
-  #                      pAdjustMethod = "BH",
-  #                      qvalueCutoff = 0.05,
-  #                      TERM2GENE = term2gene_kog[,c("kogdefline","gene_name")])
-  # a<-dotplot(ekog_up,orderBy="GeneRatio")
-  # ekog_down <- enricher(gene = as.character(sigOE$gene[sigOE$regulation=="down"]), 
-  #                        universe = allOE_genes,
-  #                        pAdjustMethod = "BH",
-  #                        qvalueCutoff = 0.05,
-  #                        TERM2GENE = term2gene_kog[,c("kogdefline","gene_name")])
-  # b<-dotplot(ekog_down,orderBy="GeneRatio")
-  # # c<-cnetplot(ekog, 
-  # #             categorySize="pvalue", 
-  # #             showCategory = 5, 
-  # #             foldChange=OE_foldchanges, 
-  # #             vertex.label.font=6)
-  # pdf(paste0("output_group/",name,".KOG.pdf"),width=14,height=18)
-  # print(ggarrange(a,b)) 
-  # graphics.off()
-  
-  #### Table of all the data
-  #### Annotation of all GO,KEGG,KOG,IPR
-  res_ids <- left_join(res_tableOE_tb, ed_gff_go, by=c("gene"="gene_name"))  
-  res_ids <- left_join(res_ids, ed_gff_kegg, by=c("gene"="gene_name")) 
-  res_ids <- left_join(res_ids, ed_gff_kog, by=c("gene"="gene_name")) 
-  res_ids <- left_join(res_ids, ed_gff_ipr, by=c("gene"="gene_name")) 
-  res_sigOEids <- res_ids %>%
-    filter(padj < 0.05 & threshold_OE==TRUE)
-  write.csv(as.data.frame(res_sigOEids), 
-            file=paste0("output_group/",name,".GO_KEGG_KOG_IPR_annotation.csv"))
-  ####
+  write.table(ego_up, paste0("output_group/Supplementary_",name,"_go_up.txt"), sep="\t", row.names=F, quote=F)
+  write.table(ego_down, paste0("output_group/Supplementary_",name,"_go_down.txt"), sep="\t", row.names=F, quote=F)
+  write.table(ego, paste0("output_group/Supplementary_",name,"_go.txt"), sep="\t", row.names=F, quote=F)
 }
 
 GO.plot.up=list()
 GO.plot.down=list()
 gene.counts=list()
 gene.counts.numbers=list()
+
+GO_results(res_PKS_vs_WT_ctl)
+GO_results(res_PKS_vs_WT_irr)
 
 GO_results(res_WT15common_vs_WT_irr) #up=NULL
 GO_results(res_WT15common_vs_WT_ctl)
@@ -783,6 +732,17 @@ GO_results(res_WT15common_irr_vs_ctl)
 GO_results(res_PKS15common_irr_vs_ctl)
 GO_results(res_PKS15common_vs_WT15common_irr_vs_ctl)
 
+GO_results(res_WT15.1.2_irr_vs_ctl) 
+GO_results(res_WT15.2.1_irr_vs_ctl) 
+GO_results(res_WT15.2.2_irr_vs_ctl) 
+GO_results(res_WT15.4.1_irr_vs_ctl) 
+GO_results(res_WT15.4.2_irr_vs_ctl) 
+GO_results(res_PKS15.1.1_irr_vs_ctl) 
+GO_results(res_PKS15.2.1_irr_vs_ctl) 
+GO_results(res_PKS15.2.2_irr_vs_ctl) 
+GO_results(res_PKS15.3.2_irr_vs_ctl) 
+GO_results(res_PKS15.4.2_irr_vs_ctl)
+
 GO_results(res_WT15.1.2_vs_WT_irr) 
 GO_results(res_WT15.2.1_vs_WT_irr) 
 GO_results(res_WT15.2.2_vs_WT_irr) 
@@ -793,6 +753,7 @@ GO_results(res_PKS15.2.1_vs_PKS_irr)
 GO_results(res_PKS15.2.2_vs_PKS_irr) 
 GO_results(res_PKS15.3.2_vs_PKS_irr) 
 GO_results(res_PKS15.4.2_vs_PKS_irr) 
+
 GO_results(res_WT15.1.2_vs_WT_ctl) 
 GO_results(res_WT15.2.1_vs_WT_ctl) 
 GO_results(res_WT15.2.2_vs_WT_ctl) 
@@ -802,174 +763,33 @@ GO_results(res_PKS15.1.1_vs_PKS_ctl)
 GO_results(res_PKS15.2.1_vs_PKS_ctl) 
 GO_results(res_PKS15.2.2_vs_PKS_ctl) 
 GO_results(res_PKS15.3.2_vs_PKS_ctl) 
-GO_results(res_PKS15.4.2_vs_PKS_ctl) 
+GO_results(res_PKS15.4.2_vs_PKS_ctl)
+
+df<-as.data.frame(unlist(gene.counts.numbers))
+df$regulation<-gsub(".*irr.|.*ctl.","",rownames(df))
+df$condition<-gsub(".*_|.up|.down","",rownames(df))
+df$condition<-gsub("irr","irradiation",df$condition)
+df$condition<-gsub("ctl","non-irradiated",df$condition)
+df$Isolate<-gsub("res_|_vs.*","",rownames(df))
+colnames(df)[1]<-"counts"
+df<-df[grep("15\\.",df$Isolate),]
+df<-(df[grep("irr",df$Isolate,invert=TRUE),])
+df<-(df[grep("vs_WT_|vs_PKS_",rownames(df)),])
+
+pdf("output_group/evolFigS2_WT15_PKS15_irr_ctl_genecounts.pdf",width = 8.5,height=11)
+ggplot(data=df, aes(x=Isolate,y=counts, fill=regulation)) +
+  facet_wrap(~condition)+
+  geom_bar(stat="identity", position=position_dodge())+
+  scale_x_discrete(limits=rev)+xlab("Direction of regulation")+
+  scale_y_continuous(expand = c(0,0))+ ylab("No. of DEGs")+
+  scale_fill_brewer(palette="Paired")+
+  theme_classic()+
+  geom_text(stat="identity", aes(label=df$counts), vjust=1.7,size=2,position = position_dodge(0.9))+
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+graphics.off()
 
 
-###Within differences of the evolved WT15 lines
-GO_results(res_WT15.1.2_vs_WT15.2.1_irr)
-GO_results(res_WT15.1.2_vs_WT15.2.2_irr)
-GO_results(res_WT15.1.2_vs_WT15.4.1_irr)
-GO_results(res_WT15.1.2_vs_WT15.4.2_irr)
 
-GO_results(res_WT15.2.1_vs_WT15.1.2_irr)
-GO_results(res_WT15.2.1_vs_WT15.2.2_irr)
-GO_results(res_WT15.2.1_vs_WT15.4.1_irr)
-GO_results(res_WT15.2.1_vs_WT15.4.2_irr)
-
-GO_results(res_WT15.2.2_vs_WT15.1.2_irr)
-GO_results(res_WT15.2.2_vs_WT15.2.1_irr)
-GO_results(res_WT15.2.2_vs_WT15.4.1_irr)
-GO_results(res_WT15.2.2_vs_WT15.4.2_irr)
-
-GO_results(res_WT15.4.1_vs_WT15.1.2_irr)
-GO_results(res_WT15.4.1_vs_WT15.2.1_irr)
-GO_results(res_WT15.4.1_vs_WT15.2.2_irr)
-GO_results(res_WT15.4.1_vs_WT15.4.2_irr)
-
-GO_results(res_WT15.4.2_vs_WT15.1.2_irr)
-GO_results(res_WT15.4.2_vs_WT15.2.1_irr)
-GO_results(res_WT15.4.2_vs_WT15.2.2_irr)
-GO_results(res_WT15.4.2_vs_WT15.4.1_irr)
-
-###Within differences of the evolved PKS15 lines
-GO_results(res_PKS15.1.1_vs_PKS15.2.1_irr)
-GO_results(res_PKS15.1.1_vs_PKS15.2.2_irr)
-GO_results(res_PKS15.1.1_vs_PKS15.3.2_irr)
-GO_results(res_PKS15.1.1_vs_PKS15.4.2_irr)
-
-GO_results(res_PKS15.2.1_vs_PKS15.1.1_irr)
-GO_results(res_PKS15.2.1_vs_PKS15.2.2_irr)
-GO_results(res_PKS15.2.1_vs_PKS15.3.2_irr)
-GO_results(res_PKS15.2.1_vs_PKS15.4.2_irr)
-
-GO_results(res_PKS15.2.2_vs_PKS15.1.1_irr)
-GO_results(res_PKS15.2.2_vs_PKS15.2.1_irr)
-GO_results(res_PKS15.2.2_vs_PKS15.3.2_irr)
-GO_results(res_PKS15.2.2_vs_PKS15.4.2_irr)
-
-GO_results(res_PKS15.3.2_vs_PKS15.1.1_irr)
-GO_results(res_PKS15.3.2_vs_PKS15.2.1_irr)
-GO_results(res_PKS15.3.2_vs_PKS15.2.2_irr)
-GO_results(res_PKS15.3.2_vs_PKS15.4.2_irr)
-
-GO_results(res_PKS15.4.2_vs_PKS15.1.1_irr)
-GO_results(res_PKS15.4.2_vs_PKS15.2.1_irr)
-GO_results(res_PKS15.4.2_vs_PKS15.2.2_irr)
-GO_results(res_PKS15.4.2_vs_PKS15.3.2_irr)
-
-###Between differences of the evolved WT15 and PKS15 lines
-GO_results(res_PKS15.1.1_vs_WT15.1.2_irr)
-GO_results(res_PKS15.1.1_vs_WT15.2.1_irr)
-GO_results(res_PKS15.1.1_vs_WT15.2.2_irr)
-GO_results(res_PKS15.1.1_vs_WT15.4.1_irr)
-GO_results(res_PKS15.1.1_vs_WT15.4.2_irr)
-
-GO_results(res_PKS15.2.1_vs_WT15.1.2_irr)
-GO_results(res_PKS15.2.1_vs_WT15.2.1_irr)
-GO_results(res_PKS15.2.1_vs_WT15.2.2_irr)
-GO_results(res_PKS15.2.1_vs_WT15.4.1_irr)
-GO_results(res_PKS15.2.1_vs_WT15.4.2_irr)
-
-GO_results(res_PKS15.2.2_vs_WT15.1.2_irr)
-GO_results(res_PKS15.2.2_vs_WT15.2.1_irr)
-GO_results(res_PKS15.2.2_vs_WT15.2.2_irr)
-GO_results(res_PKS15.2.2_vs_WT15.4.1_irr)
-GO_results(res_PKS15.2.2_vs_WT15.4.2_irr)
-
-GO_results(res_PKS15.3.2_vs_WT15.1.2_irr)
-GO_results(res_PKS15.3.2_vs_WT15.2.1_irr)
-GO_results(res_PKS15.3.2_vs_WT15.2.2_irr)
-GO_results(res_PKS15.3.2_vs_WT15.4.1_irr)
-GO_results(res_PKS15.3.2_vs_WT15.4.2_irr)
-
-GO_results(res_PKS15.4.2_vs_WT15.1.2_irr)
-GO_results(res_PKS15.4.2_vs_WT15.2.1_irr)
-GO_results(res_PKS15.4.2_vs_WT15.2.2_irr)
-GO_results(res_PKS15.4.2_vs_WT15.4.1_irr)
-GO_results(res_PKS15.4.2_vs_WT15.4.2_irr)
-
-###Within differences of the evolved WT15 lines
-GO_results(res_WT15.1.2_vs_WT15.2.1_ctl)
-GO_results(res_WT15.1.2_vs_WT15.2.2_ctl)
-GO_results(res_WT15.1.2_vs_WT15.4.1_ctl)
-GO_results(res_WT15.1.2_vs_WT15.4.2_ctl)
-
-GO_results(res_WT15.2.1_vs_WT15.1.2_ctl)
-GO_results(res_WT15.2.1_vs_WT15.2.2_ctl)
-GO_results(res_WT15.2.1_vs_WT15.4.1_ctl)
-GO_results(res_WT15.2.1_vs_WT15.4.2_ctl)
-
-GO_results(res_WT15.2.2_vs_WT15.1.2_ctl)
-GO_results(res_WT15.2.2_vs_WT15.2.1_ctl)
-GO_results(res_WT15.2.2_vs_WT15.4.1_ctl)
-GO_results(res_WT15.2.2_vs_WT15.4.2_ctl)
-
-GO_results(res_WT15.4.1_vs_WT15.1.2_ctl)
-GO_results(res_WT15.4.1_vs_WT15.2.1_ctl)
-GO_results(res_WT15.4.1_vs_WT15.2.2_ctl)
-GO_results(res_WT15.4.1_vs_WT15.4.2_ctl)
-
-GO_results(res_WT15.4.2_vs_WT15.1.2_ctl)
-GO_results(res_WT15.4.2_vs_WT15.2.1_ctl)
-GO_results(res_WT15.4.2_vs_WT15.2.2_ctl)
-GO_results(res_WT15.4.2_vs_WT15.4.1_ctl)
-
-###Within differences of the evolved PKS15 lines
-GO_results(res_PKS15.1.1_vs_PKS15.2.1_ctl)
-GO_results(res_PKS15.1.1_vs_PKS15.2.2_ctl)
-GO_results(res_PKS15.1.1_vs_PKS15.3.2_ctl)
-GO_results(res_PKS15.1.1_vs_PKS15.4.2_ctl)
-
-GO_results(res_PKS15.2.1_vs_PKS15.1.1_ctl)
-GO_results(res_PKS15.2.1_vs_PKS15.2.2_ctl)
-GO_results(res_PKS15.2.1_vs_PKS15.3.2_ctl)
-GO_results(res_PKS15.2.1_vs_PKS15.4.2_ctl)
-
-GO_results(res_PKS15.2.2_vs_PKS15.1.1_ctl)
-GO_results(res_PKS15.2.2_vs_PKS15.2.1_ctl)
-GO_results(res_PKS15.2.2_vs_PKS15.3.2_ctl)
-GO_results(res_PKS15.2.2_vs_PKS15.4.2_ctl)
-
-GO_results(res_PKS15.3.2_vs_PKS15.1.1_ctl)
-GO_results(res_PKS15.3.2_vs_PKS15.2.1_ctl)
-GO_results(res_PKS15.3.2_vs_PKS15.2.2_ctl)
-GO_results(res_PKS15.3.2_vs_PKS15.4.2_ctl)
-
-GO_results(res_PKS15.4.2_vs_PKS15.1.1_ctl)
-GO_results(res_PKS15.4.2_vs_PKS15.2.1_ctl)
-GO_results(res_PKS15.4.2_vs_PKS15.2.2_ctl)
-GO_results(res_PKS15.4.2_vs_PKS15.3.2_ctl)
-
-###Between differences of the evolved WT15 and PKS15 lines
-GO_results(res_PKS15.1.1_vs_WT15.1.2_ctl)
-GO_results(res_PKS15.1.1_vs_WT15.2.1_ctl)
-GO_results(res_PKS15.1.1_vs_WT15.2.2_ctl)
-GO_results(res_PKS15.1.1_vs_WT15.4.1_ctl)
-GO_results(res_PKS15.1.1_vs_WT15.4.2_ctl)
-
-GO_results(res_PKS15.2.1_vs_WT15.1.2_ctl)
-GO_results(res_PKS15.2.1_vs_WT15.2.1_ctl)
-GO_results(res_PKS15.2.1_vs_WT15.2.2_ctl)
-GO_results(res_PKS15.2.1_vs_WT15.4.1_ctl)
-GO_results(res_PKS15.2.1_vs_WT15.4.2_ctl)
-
-GO_results(res_PKS15.2.2_vs_WT15.1.2_ctl)
-GO_results(res_PKS15.2.2_vs_WT15.2.1_ctl)
-GO_results(res_PKS15.2.2_vs_WT15.2.2_ctl)
-GO_results(res_PKS15.2.2_vs_WT15.4.1_ctl)
-GO_results(res_PKS15.2.2_vs_WT15.4.2_ctl)
-
-GO_results(res_PKS15.3.2_vs_WT15.1.2_ctl)
-GO_results(res_PKS15.3.2_vs_WT15.2.1_ctl)
-GO_results(res_PKS15.3.2_vs_WT15.2.2_ctl)
-GO_results(res_PKS15.3.2_vs_WT15.4.1_ctl)
-GO_results(res_PKS15.3.2_vs_WT15.4.2_ctl)
-
-GO_results(res_PKS15.4.2_vs_WT15.1.2_ctl)
-GO_results(res_PKS15.4.2_vs_WT15.2.1_ctl)
-GO_results(res_PKS15.4.2_vs_WT15.2.2_ctl)
-GO_results(res_PKS15.4.2_vs_WT15.4.1_ctl)
-GO_results(res_PKS15.4.2_vs_WT15.4.2_ctl)
 ######################################################################
 ###### WGCNA:weighted correlation network analysis ###################
 ###### weighted gene co-expression network analysis ##################
@@ -1009,7 +829,7 @@ plot(sft$fitIndices[,1], sft$fitIndices[,5],
      main = paste("Mean connectivity"))
 text(sft$fitIndices[,1], sft$fitIndices[,5], labels=powers, cex=cex1,col="red")
 
-###We now calculate the adjacencies, using the soft thresholding power: the lowest power for which the scale-free topology fit index reaches 0.85 or 0.90
+###We now calculate the adjacencies/correlation, using the soft thresholding power: the lowest power for which the scale-free topology fit index reaches 0.85 or 0.90
 softPower = 17;
 direction<-"signed"
 adjacency = adjacency(datExpr, power = softPower, type=direction);
@@ -1092,7 +912,11 @@ nSamples = nrow(datExpr);
 MEs0 = moduleEigengenes(datExpr, moduleColors)$eigengenes
 MEs = orderMEs(MEs0)
 ###get "trait" or "radiation" data
-datTraits<-coldata[rownames(MEs),c("genotype","Transfers","condition","radiation_level")]
+datTraits<-coldata[rownames(MEs),c("genotype","Transfers","condition","radiation_level",
+                                   "survival.2000Gy","survival.4000Gy","survival.6000Gy",
+                                   "condition.PKS15","survival.2000Gy.PKS15","survival.4000Gy.PKS15","survival.6000Gy.PKS15",
+                                   "condition.WT15","survival.2000Gy.WT15","survival.4000Gy.WT15","survival.6000Gy.WT15")]
+
 ### Condition as numeric values
 datTraits$condition[datTraits$condition=="Control"]<-0
 datTraits$condition[datTraits$condition=="Irradiated"]<-1
@@ -1102,6 +926,28 @@ datTraits$genotype_PKS<-gsub("WT.*|8115|R52","0",datTraits$genotype)
 datTraits$genotype_PKS<-gsub("PKS.*","1",datTraits$genotype_PKS) 
 datTraits$genotype_WT<-gsub("PKS.*|8115|R52",0,datTraits$genotype)
 datTraits$genotype_WT<-gsub("WT.*","1",datTraits$genotype_WT) 
+
+datTraits$genotype_PKS15<-gsub("PKSC.*|WT.*|8115.*|R52.*","0",row.names(datTraits))
+datTraits$genotype_PKS15<-gsub("PKS15.*","1",datTraits$genotype_PKS15) 
+datTraits$genotype_WT15<-gsub("WTC.*|WT0.*|PKS.*|8115.*|R52.*","0",row.names(datTraits))
+datTraits$genotype_WT15<-gsub("WT15.*","1",datTraits$genotype_WT15) 
+datTraits$WT15.irradiated<-NA
+datTraits$PKS15.irradiated<-NA
+datTraits$WT15.nonirradiated<-NA
+datTraits$PKS15.nonirradiated<-NA
+
+datTraits[which(datTraits$genotype_WT15==1 & datTraits$condition==1),]$WT15.irradiated<-1
+datTraits[which(grepl("WTC",rownames(datTraits))& datTraits$condition==1),]$WT15.irradiated<-0
+
+datTraits[which(datTraits$genotype_WT15==1 & datTraits$condition==0),]$WT15.nonirradiated<-1
+datTraits[which(grepl("WTC",rownames(datTraits))& datTraits$condition==0),]$WT15.nonirradiated<-0
+
+datTraits[which(datTraits$genotype_PKS15==1 & datTraits$condition==1),]$PKS15.irradiated<-1
+datTraits[which(grepl("PKSC",rownames(datTraits))& datTraits$condition==1),]$PKS15.irradiated<-0
+
+datTraits[which(datTraits$genotype_PKS15==1 & datTraits$condition==0),]$PKS15.nonirradiated<-1
+datTraits[which(grepl("PKSC",rownames(datTraits))& datTraits$condition==0),]$PKS15.nonirradiated<-0
+
 datTraits$genotype<-NULL
 
 moduleTraitCor = cor(MEs, datTraits, use = "p");
@@ -1126,6 +972,122 @@ labeledHeatmap(Matrix = moduleTraitCor,
                zlim = c(-1,1),
                main = paste("Module-trait relationships"))
 View(t(rbind(colnames(datExpr),moduleColors)))
+
+pdf("evolFig6_WGCNA_corrModuleTrait.pdf", width=8.5,height=11)
+par(mar = c(10,12, 1, 1.5))
+labeledHeatmap(Matrix = moduleTraitCor[,c(21,22,19,20,11,10)],
+               xLabels = c("WT15 vs WTC non-irradiated","PKS15 vs PKSC non-irradiated",
+                           "WT15 vs WTC irradiated","PKS15 vs PKSC irradiated",
+                           "survival.6000Gy.WT15","survival.6000Gy.PKS15"),
+               yLabels = names(MEs),
+               ySymbols = c("regulation of transcription 
+                            DNA dependent",
+                            "ATP synthesis coupled 
+                 proton transport",
+                            "binding",
+                            "transport",
+                            "signal transduction",
+                            "DNA binding/
+                 replication/repair",
+                            "protein binding",
+                            "zinc finger",
+                            "unfolded protein binding",
+                            "oxidoreductase activity/
+                 pyridoxal phosphate 
+                 binding",
+                            "membrane",
+                            "oxidoreductase activity/
+                 FAD binding",
+                            "tricarboxylic acid cycle",
+                            "intracellular 
+                 protein transport",
+                            "oxidoreductase activity/
+                 carbohydrate metabolism",
+                            "Starch and 
+                 sucrose metabolism",
+                            "WD40 repeat protein",
+                            "nucleic acid binding",
+                            "cytoplasm",
+                            "translation",
+                            "integral to membrane"),
+               colorLabels = FALSE,
+               colors = greenWhiteRed(50),
+               textMatrix = textMatrix[,c(21,22,19,20,11,10)],
+               setStdMargins = FALSE,
+               cex.text = 0.5,
+               font.lab.x=0.001,
+               font.lab.y=0.001,
+               zlim = c(-1,1))
+graphics.off()
+#"MEsalmon" = regulation of transcription, DNA−dependent
+#"MEsienna3" = ATP synthesis coupled proton transport
+#"MEviolet" = binding
+#"MEdarkgreen" = transport
+#"MEpink" = signal transduction
+#"MEcyan" = DNA binding/replication/repair
+#"MEdarkorange" = protein binding
+#"MEorangered4" =*hub zinc finger
+#"MEplum1" = unfolded protein binding
+#"MEorange" = oxidoreductase activity/pyridoxal phosphate binding
+#"MEgreen" = membrane
+#"MEblack" = oxidoreductase activity/FAD binding
+#"MElightcyan1" =tricarboxylic acid cycle
+#"MEblue" = intracellular protein transport
+#"MEturquoise" = oxidoreductase activity/carbohydrate metabolic process
+#"MEpaleturquoise" =*hub Starch and sucrose metabolism
+#"MEskyblue3" =*hub WD40 repeat protein
+#"MEbrown" = nucleic acid binding
+#"MElightyellow" = cytoplasm
+#"MEyellow" = translation
+#"MEgrey" = integral to membrane
+
+
+pdf("evolFig6_WGCNA_corModuleTrait_horiz.pdf", height=8, width=18)
+par(mar = c(10,15, 1, 1.5))
+labeledHeatmap(Matrix = t(moduleTraitCor[,c(21,22,19,20,11,10)]),
+               yLabels = c("WT15 vs WTC non-irradiated","PKS15 vs PKSC non-irradiated",
+                           "WT15 vs WTC irradiated","PKS15 vs PKSC irradiated",
+                           "survival.6000Gy.WT15","survival.6000Gy.PKS15"),
+               xLabels = names(MEs),
+               xSymbols = c("regulation of transcription 
+                            DNA dependent",
+                            "ATP synthesis coupled 
+                 proton transport",
+                            "binding",
+                            "transport",
+                            "signal transduction",
+                            "DNA binding/
+                 replication/repair",
+                            "protein binding",
+                            "zinc finger",
+                            "unfolded protein binding",
+                            "oxidoreductase activity/
+                 pyridoxal phosphate 
+                 binding",
+                            "membrane",
+                            "oxidoreductase activity/
+                 FAD binding",
+                            "tricarboxylic acid cycle",
+                            "intracellular 
+                 protein transport",
+                            "oxidoreductase activity/
+                 carbohydrate metabolism",
+                            "Starch and 
+                 sucrose metabolism",
+                            "WD40 repeat protein",
+                            "nucleic acid binding",
+                            "cytoplasm",
+                            "translation",
+                            "integral to membrane"),
+               colorLabels = FALSE,
+               colors = greenWhiteRed(50),
+               textMatrix = t(textMatrix[,c(21,22,19,20,11,10)]),
+               setStdMargins = FALSE,
+               cex.text = 1,
+               font.lab.x=0.001,
+               font.lab.y=0.001,
+               zlim = c(-1,1))
+graphics.off()
 ###Gene relationship to trait and important modules: Gene Significance and Module Membership
 ### Define variable condition containing the condition column of datTrait
 #radiation_level = as.data.frame(datTraits$Transfers);
@@ -1144,7 +1106,7 @@ GSPvalue = as.data.frame(corPvalueStudent(as.matrix(geneTraitSignificance), nSam
 names(geneTraitSignificance) = paste("GS.", names(radiation_level), sep="");
 names(GSPvalue) = paste("p.GS.", names(radiation_level), sep="");
 
-##### Test different modules and their correlation with Irradiation
+#### Test different modules and their correlation with Irradiation
 scatter_plot<-vector('list',length(unique(moduleColors)[unique(moduleColors)!="grey"]))
 
 scatter_plot<-function(module){
@@ -1175,7 +1137,7 @@ probes=colnames(datExpr)
 colnames(datExpr)[moduleColors=="darkorange2"]
 colnames(datExpr)[moduleColors=="greenyellow"]
 
-annot<-Reduce(function(...) merge(..., by='gene_name', all=TRUE), 
+annot<-Reduce(function(...) merge(..., by='gene_name', all=TRUE),
               list(geneTraitSignificance%>%
                      mutate(gene_name = rownames(geneTraitSignificance)),
                    ed_gff_go,ed_gff_kegg,ed_gff_kog,ed_gff_ipr))
@@ -1185,7 +1147,7 @@ module_colors<-cbind(moduleColors,probes)
 colnames(module_colors)<-c("moduleColors","gene_name")
 
 geneInfo0 <- Reduce(
-  function(x, y, ...) merge(x, y, all = TRUE, ...),
+  function(x, y, ...) merge(x, y, all = FALSE, ...),
   list(annot, module_colors,
        tibble::rownames_to_column(geneTraitSignificance, "gene_name"),
        tibble::rownames_to_column(GSPvalue, "gene_name"))
@@ -1267,7 +1229,7 @@ cytoscape_tables<-function(modules){
   )
   graphics.off() 
   
-  # Export the network into edge and node list files Cytoscape can read
+  # Export the network into edge and node list files Cytoscape can read (do not use; inaccurate output but correct modTOM, nodeName, altNodeNames)
   #cyt = exportNetworkToCytoscape(modTOM,
   #                               edgeFile = paste("CytoscapeInput-edges-", paste(modules, collapse="-"),"_",direction, ".txt", sep=""),
   #                               nodeFile = paste("CytoscapeInput-nodes-", paste(modules, collapse="-"),"_",direction, ".txt", sep=""),
@@ -1278,7 +1240,8 @@ cytoscape_tables<-function(modules){
   #                               nodeAttr = moduleColors[inModule]);
   
 }
-lapply(unique(moduleColors)[unique(moduleColors)!="grey"], cytoscape_tables)
+lapply(unique(moduleColors), cytoscape_tables)
+#lapply(unique(moduleColors)[unique(moduleColors)!="grey"], cytoscape_tables)
 #cytoscape_tables(modules = c("greenyellow"))
 
 top5_sub_hubs$gene_name<-rownames(top5_sub_hubs)
@@ -1338,45 +1301,45 @@ GO_wgcna<-function(modules){
 #### Identify modules with significant correlation with radiation
 significant_modules<-moduleTraitPvalue[,"radiation_level"][moduleTraitPvalue[,"radiation_level"]<0.05]
 significant_modules<-names(significant_modules)
-####Positive Correlation with Irradiation
-GO_wgcna(modules="cyan") #no KOG
-GO_wgcna(modules="orangered4") #no GO,KEGG,KOG
-GO_wgcna(modules="plum1") #no KEGG
-GO_wgcna(modules="darkorange") 
-GO_wgcna(modules="darkgreen") 
-GO_wgcna(modules="paleturquoise") #no GO,KEGG,KOG
-####Negative Correlation with Irradiation
-GO_wgcna(modules="lightyellow")
-GO_wgcna(modules="violet")
-GO_wgcna(modules="brown")
-GO_wgcna(modules="yellow")
-
-GO_wgcna(modules="black")
-GO_wgcna(modules="lightcyan1")
-GO_wgcna(modules="green")
-GO_wgcna(modules="grey")
-
-GO.plot.wgcna<-list()
-GO_wgcna(modules="green")
-GO_wgcna(modules="turquoise")
-GO_wgcna(modules="brown")
-GO_wgcna(modules="salmon")
-GO_wgcna(modules="lightcyan1")
-GO_wgcna(modules="blue")
-GO_wgcna(modules="violet")    
-GO_wgcna(modules="lightyellow")
-GO_wgcna(modules="black")
-GO_wgcna(modules="pink")
-GO_wgcna(modules="darkgreen")
-GO_wgcna(modules="orange")
-GO_wgcna(modules="paleturquoise")
-GO_wgcna(modules="darkorange")   
-GO_wgcna(modules="cyan")
-GO_wgcna(modules="skyblue3")
-GO_wgcna(modules="yellow")
-GO_wgcna(modules="orangered4")
-GO_wgcna(modules="plum1")
-GO_wgcna(modules="sienna3")
+# ####Positive Correlation with Irradiation
+# GO_wgcna(modules="cyan") #no KOG
+# GO_wgcna(modules="orangered4") #no GO,KEGG,KOG
+# GO_wgcna(modules="plum1") #no KEGG
+# GO_wgcna(modules="darkorange") 
+# GO_wgcna(modules="darkgreen") 
+# GO_wgcna(modules="paleturquoise") #no GO,KEGG,KOG
+# ####Negative Correlation with Irradiation
+# GO_wgcna(modules="lightyellow")
+# GO_wgcna(modules="violet")
+# GO_wgcna(modules="brown")
+# GO_wgcna(modules="yellow")
+# 
+# GO_wgcna(modules="black")
+# GO_wgcna(modules="lightcyan1")
+# GO_wgcna(modules="green")
+# GO_wgcna(modules="grey")
+# 
+# GO.plot.wgcna<-list()
+# GO_wgcna(modules="green")
+# GO_wgcna(modules="turquoise")
+# GO_wgcna(modules="brown")
+# GO_wgcna(modules="salmon")
+# GO_wgcna(modules="lightcyan1")
+# GO_wgcna(modules="blue")
+# GO_wgcna(modules="violet")    
+# GO_wgcna(modules="lightyellow")
+# GO_wgcna(modules="black")
+# GO_wgcna(modules="pink")
+# GO_wgcna(modules="darkgreen")
+# GO_wgcna(modules="orange")
+# GO_wgcna(modules="paleturquoise")
+# GO_wgcna(modules="darkorange")   
+# GO_wgcna(modules="cyan")
+# GO_wgcna(modules="skyblue3")
+# GO_wgcna(modules="yellow")
+# GO_wgcna(modules="orangered4")
+# GO_wgcna(modules="plum1")
+# GO_wgcna(modules="sienna3")
 
 ############## Candidate Genes: DEG and WGCNA analyses ###############
 ###### PKS15 vs PKS control conditions enriched for oxidoreductase activity
@@ -1390,474 +1353,47 @@ DEG_WGCNA_Transfers<-inner_join(Transfers_df,PKS15common_vs_PKS_ctl_df,by=c("gen
 ###### PKS15 vs PKS control irradiated enriched for ribosome and translation activity
 ###### Top negative correlated Transfer module (yellow) enriched for translation and ribosome activity
 
-################################################################################
-####################### WT15 and PKS15 Manuscript Figures ######################
-################################################################################
-
-############################### Figure S3 ########################################
-FigS3A<-ggarrange(gene.counts[["res_WT_irr_vs_ctl"]]+ rremove("xlab")+font("xy.text", size = 7)+font("ylab", size = 7),
-                 gene.counts[["res_PKS_irr_vs_ctl"]]+ rremove("xlab")+font("xy.text", size = 7)+font("ylab", size = 7), 
-                 gene.counts[["res_WT15common_irr_vs_ctl"]]+ rremove("xlab")+font("xy.text", size = 7)+font("ylab", size = 7), 
-                 gene.counts[["res_PKS15common_irr_vs_ctl"]]+font("xlab", size = 7)+font("xy.text", size = 7)+font("ylab", size = 7), 
-                 nrow =4, ncol = 1, common.legend = TRUE, legend = "none",labels ="A")
-
-FigS3B<-ggarrange(GO.plot.up[["res_WT_irr_vs_ctl"]]+ rremove("xlab")+font("xy.text", size = 7),
-                 GO.plot.up[["res_PKS_irr_vs_ctl"]]+ rremove("xlab")+font("xy.text", size = 7),
-                 GO.plot.up[["res_WT15common_irr_vs_ctl"]]+ rremove("xlab")+font("xy.text", size = 7),
-                 GO.plot.up[["res_PKS15common_irr_vs_ctl"]]+font("xlab", size = 7)+font("xy.text", size = 7),
-                 nrow = 5, ncol = 1, labels = c("B"),align = "hv",common.legend = TRUE,legend="none")
-
-FigS3C<-ggarrange(GO.plot.down[["res_WT_irr_vs_ctl"]]+ rremove("xlab")+font("xy.text", size = 7)+
-                   theme(legend.key.size = unit(0.5, 'cm'),
-                         legend.text = element_text(size = 7),
-                         legend.title = element_text(size = 7)),
-                 GO.plot.down[["res_PKS_irr_vs_ctl"]]+ rremove("xlab")+font("xy.text", size = 7)+
-                   theme(legend.key.size = unit(0.5, 'cm'),
-                         legend.text = element_text(size = 7),
-                         legend.title = element_text(size = 7)),
-                 GO.plot.down[["res_WT15common_irr_vs_ctl"]]+ rremove("xlab")+font("xy.text", size = 7)+
-                   theme(legend.key.size = unit(0.5, 'cm'),
-                         legend.text = element_text(size = 7),
-                         legend.title = element_text(size = 7)),
-                 GO.plot.down[["res_PKS15common_irr_vs_ctl"]]+font("xlab", size = 7)+font("xy.text", size = 7)+
-                   theme(legend.key.size = unit(0.5, 'cm'),
-                         legend.text = element_text(size = 7),
-                         legend.title = element_text(size = 7)),
-                 nrow = 5, ncol = 1, labels = c("C"),align = "hv",common.legend = TRUE,legend="right")
 
 
-FigS3<-ggarrange(FigS3A,FigS3B,FigS3C,ncol=3, widths=c(1,3,3.5),align = "hv")
-pdf("output_group/evolFigS3_WT15_PKS15_WTC_PKSC_irr_vs_ctl_GOenrich.pdf",width = 11,height=8.5)
-FigS3
-graphics.off()
+####### Find genes strongly correlated with gene of interest within modules ########
+##In a signed correlation network, nodes with negative correlation are
+##considered unconnected (their connection strength is zero or very close to zero). In contrast, in unsigned
+##correlation networks, nodes with strong negative correlations have high connection strengths: the unsigned
+##network adjacency is based on the absolute value of correlation, so positive and negative correlations are
+##treated equally
+table_corr_gene<-list()
+# Select the corresponding Topological Overlap
+dimnames(TOM) = list(probes, probes)
+### filter correlated genes by top 5+ and p.GS.condition<0.05
+table_corr_gene_fx<-function(gene){
+  table_corr_gene[[gene]]<<-data.frame(TOM[gene,][order(TOM[gene,],decreasing = TRUE)])
+  table_corr_gene[[gene]]$genes<<-rownames(table_corr_gene[[gene]])
+  colnames(table_corr_gene[[gene]])<<-c("weight","genes")
+  table_corr_gene[[gene]]<<-left_join(table_corr_gene[[gene]],geneInfo,by="genes")[1:9]
+  
+  table_corr_gene[[gene]]<<-rbind(subset(table_corr_gene[[gene]], p.GS.condition<0.05)[2:101,],
+                                  subset(table_corr_gene[[gene]], genes=="8115"|genes=="rad52"|genes=="pks1"))
+  table_corr_gene[[gene]]$focal_gene<<-gene
+}
+table_corr_gene_fx(gene="8115")
+table_corr_gene_fx(gene="HMPREF1120_00699T0")
+table_corr_gene_fx(gene="HMPREF1120_01778T0")
+table_corr_gene_fx(gene="HMPREF1120_05223T0")
+table_corr_gene_fx(gene="HMPREF1120_07698T0")
+table_corr_gene_fx(gene="HMPREF1120_07812T0")
+table_corr_gene_fx(gene="HMPREF1120_03349T0")
 
-############################### Figure 2 ########################################
-Fig3A<-ggarrange(gene.counts[["res_WT15common_vs_WT_ctl"]]+ rremove("xlab")+font("xy.text", size = 6)+font("ylab", size = 6),
-                 gene.counts[["res_PKS15common_vs_PKS_ctl"]]+ rremove("xlab")+font("xy.text", size = 6)+font("ylab", size = 6),
-                 gene.counts[["res_PKS15_vs_WT15_ctl"]]+ rremove("xlab")+font("xy.text", size = 6)+font("ylab", size = 6), 
-                 gene.counts[["res_WT15common_vs_WT_irr"]]+ rremove("xlab")+font("xy.text", size = 6)+font("ylab", size = 6), 
-                 gene.counts[["res_PKS15common_vs_PKS_irr"]]+ rremove("xlab")+font("xy.text", size = 6)+font("ylab", size = 6), 
-                 gene.counts[["res_PKS15_vs_WT15_irr"]]+font("xlab", size = 6)+font("xy.text", size = 6)+font("ylab", size = 6),
-                 nrow =6, ncol = 1, common.legend = TRUE, legend = "none",labels ="A")
+table_corr_gene<-rbind(table_corr_gene[["8115"]],
+                       table_corr_gene[["HMPREF1120_00699T0"]],
+                       table_corr_gene[["HMPREF1120_01778T0"]],
+                       table_corr_gene[["HMPREF1120_05223T0"]],
+                       table_corr_gene[["HMPREF1120_07698T0"]],
+                       table_corr_gene[["HMPREF1120_07812T0"]],
+                       table_corr_gene[["HMPREF1120_03349T0"]])
+table_corr_gene<-subset(table_corr_gene, genes!=focal_gene)
+table_corr_gene<-table_corr_gene[c("focal_gene","genes",
+                                   "weight",
+                                   "GO","KEGG","KOG","IPR",
+                                   "moduleColors","GS.condition","p.GS.condition")]
+write.table(table_corr_gene, "Table_correlated_genes_of_interest.txt",sep="\t", row.names=F, quote=F)
 
-Fig3B<-ggarrange(GO.plot.up[["res_WT15common_vs_WT_ctl"]]+ rremove("xlab")+font("xy.text", size = 5),
-                 GO.plot.up[["res_PKS15common_vs_PKS_ctl"]]+ rremove("xlab")+font("xy.text", size = 5),
-                 GO.plot.up[["res_PKS15_vs_WT15_ctl"]]+ rremove("xlab")+font("xy.text", size = 5),
-                 GO.plot.up[["res_WT15common_vs_WT_irr"]]+ rremove("xlab")+font("xy.text", size = 5),
-                 GO.plot.up[["res_PKS15common_vs_PKS_irr"]]+ rremove("xlab")+font("xy.text", size = 5),
-                 GO.plot.up[["res_PKS15_vs_WT15_irr"]]+font("xlab", size = 6)+font("xy.text", size = 5),
-                 nrow = 6, ncol = 1, labels = c("B"),align = "hv",common.legend = TRUE,legend="none")
-
-Fig3C<-ggarrange(GO.plot.down[["res_WT15common_vs_WT_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+
-                   theme(legend.key.size = unit(0.5, 'cm'),
-                         legend.text = element_text(size = 6),
-                         legend.title = element_text(size = 6)),
-                 GO.plot.down[["res_PKS15common_vs_PKS_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+
-                   theme(legend.key.size = unit(0.5, 'cm'),
-                         legend.text = element_text(size = 6),
-                         legend.title = element_text(size = 6)),
-                 GO.plot.down[["res_PKS15_vs_WT15_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+
-                   theme(legend.key.size = unit(0.5, 'cm'),
-                         legend.text = element_text(size = 6),
-                         legend.title = element_text(size = 6)),
-                 GO.plot.down[["res_WT15common_vs_WT_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+
-                   theme(legend.key.size = unit(0.5, 'cm'),
-                         legend.text = element_text(size = 6),
-                         legend.title = element_text(size = 6)),
-                 GO.plot.down[["res_PKS15common_vs_PKS_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+
-                   theme(legend.key.size = unit(0.5, 'cm'),
-                         legend.text = element_text(size = 6),
-                         legend.title = element_text(size = 6)),
-                 GO.plot.down[["res_PKS15_vs_WT15_irr"]]+font("xlab", size = 6)+font("xy.text", size = 5)+
-                   theme(legend.key.size = unit(0.05, 'cm'),
-                         legend.text = element_text(size = 6),
-                         legend.title = element_text(size = 6)),
-                 nrow = 6, ncol = 1, labels = c("C"),align = "hv",common.legend = TRUE,legend="none")
-
-
-Fig3<-ggarrange(Fig3A,Fig3B,Fig3C,ncol=3, widths=c(1.5,4,6),align = "hv")
-pdf("output_group/evolFig3_WT15_PKS15_irr_ctl_GOenrich.pdf",width = 8.5,height=11)
-Fig3
-graphics.off()
-
-############################### Figure 3 ########vjust =#########################
-plotDendroAndColors(geneTree, cbind(dynamicColors, mergedColors),
-                    c("Dynamic Tree Cut", "Merged dynamic"),
-                    dendroLabels = FALSE, hang = 0.03,
-                    addGuide = TRUE, guideHang = 0.05)
-net_cluster <- recordPlot()  
-plot.new() 
-
-labeledHeatmap(Matrix = moduleTraitCor,
-               xLabels = names(datTraits),
-               yLabels = names(MEs),
-               ySymbols = names(MEs),
-               colorLabels = FALSE,
-               colors = greenWhiteRed(50),
-               textMatrix = textMatrix,
-               setStdMargins = TRUE,
-               cex.text = 0.5,
-               zlim = c(-1,1),
-               main = paste("Module-trait relationships"))
-
-pdf("evolFig3_WGCNA_corrModuleTrait.pdf", width=8.5,height=11)
-par(mar = c(6,12, 1, 1.5))
-labeledHeatmap(Matrix = moduleTraitCor[,c(1,2,4,5)],
-               xLabels = c("generations","irradiation","PKS","WT"),
-               yLabels = names(MEs),
-               ySymbols = c("regulation of transcription 
-                            DNA dependent",
-                            "ATP synthesis coupled 
-                 proton transport",
-                            "binding",
-                            "transport",
-                            "signal transduction",
-                            "DNA binding/
-                 replication/repair",
-                            "protein binding",
-                            "zinc finger",
-                            "unfolded protein binding",
-                            "oxidoreductase activity/
-                 pyridoxal phosphate 
-                 binding",
-                            "membrane",
-                            "oxidoreductase activity/
-                 FAD binding",
-                            "tricarboxylic acid cycle",
-                            "intracellular 
-                 protein transport",
-                            "oxidoreductase activity/
-                 carbohydrate metabolism",
-                            "Starch and 
-                 sucrose metabolism",
-                            "WD40 repeat protein",
-                            "nucleic acid binding",
-                            "cytoplasm",
-                            "translation",
-                            "integral to membrane"),
-               colorLabels = FALSE,
-               colors = greenWhiteRed(50),
-               textMatrix = textMatrix[,c(1,2,4,5)],
-               setStdMargins = FALSE,
-               cex.text = 0.5,
-               font.lab.x=0.01,
-               font.lab.y=0.01,
-               zlim = c(-1,1))
-graphics.off()
-#"MEsalmon" = regulation of transcription, DNA−dependent
-#"MEsienna3" = ATP synthesis coupled proton transport
-#"MEviolet" = binding
-#"MEdarkgreen" = transport
-#"MEpink" = signal transduction
-#"MEcyan" = DNA binding/replication/repair
-#"MEdarkorange" = protein binding
-#"MEorangered4" =*hub zinc finger
-#"MEplum1" = unfolded protein binding
-#"MEorange" = oxidoreductase activity/pyridoxal phosphate binding
-#"MEgreen" = membrane
-#"MEblack" = oxidoreductase activity/FAD binding
-#"MElightcyan1" =tricarboxylic acid cycle
-#"MEblue" = intracellular protein transport
-#"MEturquoise" = oxidoreductase activity/carbohydrate metabolic process
-#"MEpaleturquoise" =*hub Starch and sucrose metabolism
-#"MEskyblue3" =*hub WD40 repeat protein
-#"MEbrown" = nucleic acid binding
-#"MElightyellow" = cytoplasm
-#"MEyellow" = translation
-#"MEgrey" = integral to membrane
-############################### Figure S1 #######################################
-
-pdf("evolFigS1_WT15_PKS15.heatmap.pca.pdf",width = 11,height=8.5)
-ggarrange(as.grob(evol_heatmap),
-          evol_pca+
-            theme(legend.position="none"),
-          ncol=2,labels=c("A","B"))
-graphics.off()
-############################### Figure S2 #######################################
-df<-as.data.frame(unlist(gene.counts.numbers))
-df$regulation<-gsub(".*irr.|.*ctl.","",rownames(df))
-df$condition<-gsub(".*_|.up|.down","",rownames(df))
-df$condition<-gsub("irr","irradiation",df$condition)
-df$condition<-gsub("ctl","non-irradiated",df$condition)
-df$Isolate<-gsub("res_|_vs.*","",rownames(df))
-colnames(df)[1]<-"counts"
-pdf("output_group/evolFigS2_WT15_PKS15_irr_ctl_genecounts.pdf",width = 8.5,height=11)
-ggplot(data=df, aes(x=Isolate,y=counts, fill=regulation)) +
-  facet_wrap(~condition)+
-  geom_bar(stat="identity", position=position_dodge())+
-  scale_x_discrete(limits=rev)+xlab("Direction of regulation")+
-  scale_y_continuous(expand = c(0,0))+ ylab("No. of DEGs")+
-  scale_fill_brewer(palette="Paired")+
-  theme_classic()+
-  geom_text(stat="identity", aes(label=counts), vjust=1.7,size=2,position = position_dodge(0.9))+
-  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
-graphics.off()
-
-
-############################### Figure S3 #######################################
-Fig3SA<-ggarrange(
-  GO.plot.up[["res_WT15.1.2_vs_WT_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.1.1_vs_PKS_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_WT15.2.1_vs_WT_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.2.1_vs_PKS_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_WT15.2.2_vs_WT_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.2.2_vs_PKS_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7), 
-  GO.plot.up[["res_WT15.4.1_vs_WT_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.3.2_vs_PKS_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_WT15.4.2_vs_WT_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.4.2_vs_PKS_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  nrow=5,ncol = 2,align = "hv",common.legend = TRUE,legend="right")
-Fig3SB<-ggarrange( 
-  GO.plot.up[["res_WT15.1.2_vs_WT_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.1.1_vs_PKS_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7), 
-  GO.plot.up[["res_WT15.2.1_vs_WT_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.2.1_vs_PKS_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_WT15.2.2_vs_WT_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.2.2_vs_PKS_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_WT15.4.1_vs_WT_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.3.2_vs_PKS_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7), 
-  GO.plot.up[["res_WT15.4.2_vs_WT_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.4.2_vs_PKS_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7), 
-  nrow=5,ncol = 2,align = "hv",common.legend = TRUE,legend="right")
-pdf("output_group/evolFigS3_WT15PKS15ind_irr_ctl_GOenrich.up.pdf",width = 8.5,height=11)
-Fig3SA
-Fig3SB
-graphics.off()
-############################### Figure S4 #######################################
-Fig4SA<-ggarrange(
-  GO.plot.down[["res_WT15.1.2_vs_WT_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.down[["res_PKS15.1.1_vs_PKS_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.down[["res_WT15.2.1_vs_WT_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.down[["res_PKS15.2.1_vs_PKS_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.down[["res_WT15.2.2_vs_WT_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.down[["res_PKS15.2.2_vs_PKS_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7), 
-  GO.plot.down[["res_WT15.4.1_vs_WT_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.down[["res_PKS15.3.2_vs_PKS_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.down[["res_WT15.4.2_vs_WT_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.down[["res_PKS15.4.2_vs_PKS_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  nrow=5,ncol = 2,align = "hv",common.legend = TRUE,legend="right")
-Fig4SB<-ggarrange( 
-  GO.plot.down[["res_WT15.1.2_vs_WT_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.down[["res_PKS15.1.1_vs_PKS_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7), 
-  GO.plot.down[["res_WT15.2.1_vs_WT_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.down[["res_PKS15.2.1_vs_PKS_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.down[["res_WT15.2.2_vs_WT_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.down[["res_PKS15.2.2_vs_PKS_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.down[["res_WT15.4.1_vs_WT_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.down[["res_PKS15.3.2_vs_PKS_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7), 
-  GO.plot.down[["res_WT15.4.2_vs_WT_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.down[["res_PKS15.4.2_vs_PKS_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7), 
-  nrow=5,ncol = 2,align = "hv",common.legend = TRUE,legend="right")
-pdf("output_group/evolFigS4_WT15PKS15ind_irr_ctl_GOenrich.down.pdf",width = 11,height=8.5)
-Fig4SA
-Fig4SB
-graphics.off()
-############################### Figure S5 #######################################
-FigS3<-ggarrange(plotlist = GO.plot.wgcna,
-                 ncol = 2,nrow=5,align = "hv",common.legend = TRUE,legend="bottom")
-pdf("evolFigS5_GOenrich_wgcna.pdf",width=8.5,height=11)
-FigS3
-graphics.off()
-############################### Figure S Heatmap #######################################
-topVarGenes <- head( order( rowVars( assay(vsd_evol) ), decreasing=TRUE ), 35 )
-pdf("evolFigS2_WT15_PKS15.heatmap.genes.pdf",width = 11,height=8.5)
-heatmap.2( assay(vsd_evol)[ topVarGenes, ], scale="row", 
-           trace="none", dendrogram="both", 
-           col = colorRampPalette(c("green", "black", "red"))(100),
-           ColSideColors = c( Control="blue", Irradiated="red")[
-             colData(vsd_evol)$condition ],margins=c(5,10) )
-graphics.off()
-
-############################### Figure S Individual #######################################
-pdf("evolFigS_WT15_PKS15.individual_pairwise.GOenrich.pdf",width = 11,height=8.5)
-ggarrange(	
-  GO.plot.up[["res_WT15.1.2_vs_WT15.2.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.1.2_vs_WT15.2.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_WT15.1.2_vs_WT15.2.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.1.2_vs_WT15.2.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_WT15.1.2_vs_WT15.4.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.1.2_vs_WT15.4.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_WT15.1.2_vs_WT15.4.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.1.2_vs_WT15.4.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  nrow=5,ncol = 2,align = "hv",common.legend = TRUE,legend="right")	
-ggarrange(	
-  GO.plot.up[["res_WT15.2.1_vs_WT15.1.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.2.1_vs_WT15.1.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_WT15.2.1_vs_WT15.2.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.2.1_vs_WT15.2.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_WT15.2.1_vs_WT15.4.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.2.1_vs_WT15.4.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_WT15.2.1_vs_WT15.4.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.2.1_vs_WT15.4.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  nrow=5,ncol = 2,align = "hv",common.legend = TRUE,legend="right")	
-ggarrange(	
-  GO.plot.up[["res_WT15.2.2_vs_WT15.1.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.2.2_vs_WT15.1.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_WT15.2.2_vs_WT15.2.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.2.2_vs_WT15.2.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_WT15.2.2_vs_WT15.4.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.2.2_vs_WT15.4.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_WT15.2.2_vs_WT15.4.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.2.2_vs_WT15.4.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  nrow=5,ncol = 2,align = "hv",common.legend = TRUE,legend="right")	
-ggarrange(	
-  GO.plot.up[["res_WT15.4.1_vs_WT15.1.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.4.1_vs_WT15.1.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_WT15.4.1_vs_WT15.2.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.4.1_vs_WT15.2.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_WT15.4.1_vs_WT15.2.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.4.1_vs_WT15.2.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_WT15.4.1_vs_WT15.4.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.4.1_vs_WT15.4.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  nrow=5,ncol = 2,align = "hv",common.legend = TRUE,legend="right")	
-ggarrange(	
-  GO.plot.up[["res_WT15.4.2_vs_WT15.1.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.4.2_vs_WT15.1.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_WT15.4.2_vs_WT15.2.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.4.2_vs_WT15.2.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_WT15.4.2_vs_WT15.2.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.4.2_vs_WT15.2.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_WT15.4.2_vs_WT15.4.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.4.2_vs_WT15.4.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  nrow=5,ncol = 2,align = "hv",common.legend = TRUE,legend="right")	
-ggarrange(	
-  GO.plot.up[["res_PKS15.1.1_vs_PKS15.2.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.1.1_vs_PKS15.2.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.1.1_vs_PKS15.2.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.1.1_vs_PKS15.2.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.1.1_vs_PKS15.3.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.1.1_vs_PKS15.3.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.1.1_vs_PKS15.4.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.1.1_vs_PKS15.4.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  nrow=5,ncol = 2,align = "hv",common.legend = TRUE,legend="right")	
-ggarrange(	
-  GO.plot.up[["res_PKS15.2.1_vs_PKS15.1.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.1_vs_PKS15.1.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.2.1_vs_PKS15.2.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.1_vs_PKS15.2.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.2.1_vs_PKS15.3.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.1_vs_PKS15.3.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.2.1_vs_PKS15.4.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.1_vs_PKS15.4.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  nrow=5,ncol = 2,align = "hv",common.legend = TRUE,legend="right")	
-ggarrange(	
-  GO.plot.up[["res_PKS15.2.2_vs_PKS15.1.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.2_vs_PKS15.1.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.2.2_vs_PKS15.2.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.2_vs_PKS15.2.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.2.2_vs_PKS15.3.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.2_vs_PKS15.3.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.2.2_vs_PKS15.4.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.2_vs_PKS15.4.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  nrow=5,ncol = 2,align = "hv",common.legend = TRUE,legend="right")	
-ggarrange(	
-  GO.plot.up[["res_PKS15.3.2_vs_PKS15.1.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.3.2_vs_PKS15.1.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.3.2_vs_PKS15.2.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.3.2_vs_PKS15.2.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.3.2_vs_PKS15.2.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.3.2_vs_PKS15.2.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.3.2_vs_PKS15.4.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.3.2_vs_PKS15.4.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  nrow=5,ncol = 2,align = "hv",common.legend = TRUE,legend="right")	
-ggarrange(	
-  GO.plot.up[["res_PKS15.4.2_vs_PKS15.1.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.4.2_vs_PKS15.1.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.4.2_vs_PKS15.2.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.4.2_vs_PKS15.2.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.4.2_vs_PKS15.2.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.4.2_vs_PKS15.2.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.4.2_vs_PKS15.3.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.4.2_vs_PKS15.3.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  nrow=5,ncol = 2,align = "hv",common.legend = TRUE,legend="right")	
-ggarrange(	
-  GO.plot.up[["res_PKS15.1.1_vs_WT15.1.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.1.1_vs_WT15.1.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.1.1_vs_WT15.2.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.1.1_vs_WT15.2.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.1.1_vs_WT15.2.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.1.1_vs_WT15.2.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.1.1_vs_WT15.4.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.1.1_vs_WT15.4.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.1.1_vs_WT15.4.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.1.1_vs_WT15.4.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  nrow=5,ncol = 2,align = "hv",common.legend = TRUE,legend="right")	
-ggarrange(	
-  GO.plot.up[["res_PKS15.2.1_vs_WT15.1.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.1_vs_WT15.1.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.2.1_vs_WT15.2.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.1_vs_WT15.2.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.2.1_vs_WT15.2.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.1_vs_WT15.2.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.2.1_vs_WT15.4.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.1_vs_WT15.4.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.2.1_vs_WT15.4.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.1_vs_WT15.4.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  nrow=5,ncol = 2,align = "hv",common.legend = TRUE,legend="right")	
-ggarrange(	
-  GO.plot.up[["res_PKS15.2.2_vs_WT15.1.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.2_vs_WT15.1.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.2.2_vs_WT15.2.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.2_vs_WT15.2.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.2.2_vs_WT15.2.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.2_vs_WT15.2.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.2.2_vs_WT15.4.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.2_vs_WT15.4.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.2.2_vs_WT15.4.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.2_vs_WT15.4.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  nrow=5,ncol = 2,align = "hv",common.legend = TRUE,legend="right")	
-ggarrange(	
-  GO.plot.up[["res_PKS15.3.2_vs_WT15.1.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.3.2_vs_WT15.1.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.3.2_vs_WT15.2.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.3.2_vs_WT15.2.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.3.2_vs_WT15.2.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.3.2_vs_WT15.2.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.3.2_vs_WT15.4.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.3.2_vs_WT15.4.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.3.2_vs_WT15.4.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.3.2_vs_WT15.4.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  nrow=5,ncol = 2,align = "hv",common.legend = TRUE,legend="right")	
-ggarrange(	
-  GO.plot.up[["res_PKS15.4.2_vs_WT15.1.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.4.2_vs_WT15.1.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.4.2_vs_WT15.2.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.4.2_vs_WT15.2.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.4.2_vs_WT15.2.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.4.2_vs_WT15.2.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.4.2_vs_WT15.4.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.4.2_vs_WT15.4.1_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.4.2_vs_WT15.4.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.4.2_vs_WT15.4.2_irr"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  nrow=5,ncol = 2,align = "hv",common.legend = TRUE,legend="right")	
-ggarrange(	
-  GO.plot.up[["res_WT15.1.2_vs_WT15.2.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.1.2_vs_WT15.2.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_WT15.1.2_vs_WT15.2.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.1.2_vs_WT15.2.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_WT15.1.2_vs_WT15.4.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.1.2_vs_WT15.4.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_WT15.1.2_vs_WT15.4.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.1.2_vs_WT15.4.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  nrow=5,ncol = 2,align = "hv",common.legend = TRUE,legend="right")	
-ggarrange(	
-  GO.plot.up[["res_WT15.2.1_vs_WT15.1.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.2.1_vs_WT15.1.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_WT15.2.1_vs_WT15.2.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.2.1_vs_WT15.2.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_WT15.2.1_vs_WT15.4.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.2.1_vs_WT15.4.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_WT15.2.1_vs_WT15.4.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.2.1_vs_WT15.4.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  nrow=5,ncol = 2,align = "hv",common.legend = TRUE,legend="right")	
-ggarrange(	
-  GO.plot.up[["res_WT15.2.2_vs_WT15.1.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.2.2_vs_WT15.1.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_WT15.2.2_vs_WT15.2.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.2.2_vs_WT15.2.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_WT15.2.2_vs_WT15.4.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.2.2_vs_WT15.4.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_WT15.2.2_vs_WT15.4.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.2.2_vs_WT15.4.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  nrow=5,ncol = 2,align = "hv",common.legend = TRUE,legend="right")	
-ggarrange(	
-  GO.plot.up[["res_WT15.4.1_vs_WT15.1.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.4.1_vs_WT15.1.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_WT15.4.1_vs_WT15.2.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.4.1_vs_WT15.2.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_WT15.4.1_vs_WT15.2.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.4.1_vs_WT15.2.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_WT15.4.1_vs_WT15.4.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.4.1_vs_WT15.4.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  nrow=5,ncol = 2,align = "hv",common.legend = TRUE,legend="right")	
-ggarrange(	
-  GO.plot.up[["res_WT15.4.2_vs_WT15.1.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.4.2_vs_WT15.1.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_WT15.4.2_vs_WT15.2.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.4.2_vs_WT15.2.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_WT15.4.2_vs_WT15.2.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.4.2_vs_WT15.2.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_WT15.4.2_vs_WT15.4.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_WT15.4.2_vs_WT15.4.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  nrow=5,ncol = 2,align = "hv",common.legend = TRUE,legend="right")	
-ggarrange(	
-  GO.plot.up[["res_PKS15.1.1_vs_PKS15.2.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.1.1_vs_PKS15.2.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.1.1_vs_PKS15.2.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.1.1_vs_PKS15.2.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.1.1_vs_PKS15.3.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.1.1_vs_PKS15.3.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.1.1_vs_PKS15.4.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.1.1_vs_PKS15.4.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  nrow=5,ncol = 2,align = "hv",common.legend = TRUE,legend="right")	
-ggarrange(	
-  GO.plot.up[["res_PKS15.2.1_vs_PKS15.1.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.1_vs_PKS15.1.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.2.1_vs_PKS15.2.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.1_vs_PKS15.2.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.2.1_vs_PKS15.3.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.1_vs_PKS15.3.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.2.1_vs_PKS15.4.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.1_vs_PKS15.4.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  nrow=5,ncol = 2,align = "hv",common.legend = TRUE,legend="right")	
-ggarrange(	
-  GO.plot.up[["res_PKS15.2.2_vs_PKS15.1.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.2_vs_PKS15.1.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.2.2_vs_PKS15.2.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.2_vs_PKS15.2.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.2.2_vs_PKS15.3.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.2_vs_PKS15.3.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.2.2_vs_PKS15.4.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.2_vs_PKS15.4.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  nrow=5,ncol = 2,align = "hv",common.legend = TRUE,legend="right")	
-ggarrange(	
-  GO.plot.up[["res_PKS15.3.2_vs_PKS15.1.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.3.2_vs_PKS15.1.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.3.2_vs_PKS15.2.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.3.2_vs_PKS15.2.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.3.2_vs_PKS15.2.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.3.2_vs_PKS15.2.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.3.2_vs_PKS15.4.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.3.2_vs_PKS15.4.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  nrow=5,ncol = 2,align = "hv",common.legend = TRUE,legend="right")	
-ggarrange(	
-  GO.plot.up[["res_PKS15.4.2_vs_PKS15.1.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.4.2_vs_PKS15.1.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.4.2_vs_PKS15.2.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.4.2_vs_PKS15.2.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.4.2_vs_PKS15.2.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.4.2_vs_PKS15.2.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.4.2_vs_PKS15.3.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.4.2_vs_PKS15.3.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  nrow=5,ncol = 2,align = "hv",common.legend = TRUE,legend="right")	
-ggarrange(	
-  GO.plot.up[["res_PKS15.1.1_vs_WT15.1.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.1.1_vs_WT15.1.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.1.1_vs_WT15.2.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.1.1_vs_WT15.2.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.1.1_vs_WT15.2.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.1.1_vs_WT15.2.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.1.1_vs_WT15.4.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.1.1_vs_WT15.4.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.1.1_vs_WT15.4.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.1.1_vs_WT15.4.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  nrow=5,ncol = 2,align = "hv",common.legend = TRUE,legend="right")	
-ggarrange(	
-  GO.plot.up[["res_PKS15.2.1_vs_WT15.1.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.1_vs_WT15.1.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.2.1_vs_WT15.2.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.1_vs_WT15.2.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.2.1_vs_WT15.2.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.1_vs_WT15.2.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.2.1_vs_WT15.4.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.1_vs_WT15.4.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.2.1_vs_WT15.4.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.1_vs_WT15.4.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  nrow=5,ncol = 2,align = "hv",common.legend = TRUE,legend="right")	
-ggarrange(	
-  GO.plot.up[["res_PKS15.2.2_vs_WT15.1.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.2_vs_WT15.1.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.2.2_vs_WT15.2.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.2_vs_WT15.2.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.2.2_vs_WT15.2.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.2_vs_WT15.2.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.2.2_vs_WT15.4.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.2_vs_WT15.4.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.2.2_vs_WT15.4.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.2.2_vs_WT15.4.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  nrow=5,ncol = 2,align = "hv",common.legend = TRUE,legend="right")	
-ggarrange(	
-  GO.plot.up[["res_PKS15.3.2_vs_WT15.1.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.3.2_vs_WT15.1.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.3.2_vs_WT15.2.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.3.2_vs_WT15.2.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.3.2_vs_WT15.2.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.3.2_vs_WT15.2.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.3.2_vs_WT15.4.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.3.2_vs_WT15.4.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.3.2_vs_WT15.4.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.3.2_vs_WT15.4.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  nrow=5,ncol = 2,align = "hv",common.legend = TRUE,legend="right")	
-ggarrange(	
-  GO.plot.up[["res_PKS15.4.2_vs_WT15.1.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.4.2_vs_WT15.1.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.4.2_vs_WT15.2.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.4.2_vs_WT15.2.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.4.2_vs_WT15.2.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.4.2_vs_WT15.2.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.4.2_vs_WT15.4.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.4.2_vs_WT15.4.1_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  GO.plot.up[["res_PKS15.4.2_vs_WT15.4.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),	GO.plot.down[["res_PKS15.4.2_vs_WT15.4.2_ctl"]]+ rremove("xlab")+font("xy.text", size = 5)+font("title", size = 7),
-  nrow=5,ncol = 2,align = "hv",common.legend = TRUE,legend="right")		
-graphics.off()
