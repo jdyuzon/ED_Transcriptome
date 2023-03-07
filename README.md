@@ -15,5 +15,3 @@ ED_Transcriptome/Exode1_GeneCatalog_proteins_20160902_KEGG.csv
 ED_Transcriptome/Exode1_GeneCatalog_proteins_20160902_KOG.csv
 ED_Transcriptome/Exode1_GeneCatalog_proteins_20160902_IPR.csv
 
-## Transcript counts
-counts.txt
